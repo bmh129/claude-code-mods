@@ -316,6 +316,79 @@ test('a checklist in the answer: done, in progress, pending; under two items is 
   expect(checklistOf('nada aqui')).toBeNull()
 })
 
+test('a checklist in a fenced code block is a quote, not the plan: ``` and ~~~', () => {
+  expect(checklistOf('Use este prompt:\n```\n- [ ] Escrever 3 receitas\n- [ ] Comparar ingredientes\n```')).toBeNull()
+  expect(checklistOf('Exemplo:\n~~~markdown\n  - [ ] A\n  - [ ] B\n~~~\nfim')).toBeNull()
+  // An info string may follow the opener; the fence lines themselves are no items.
+  expect(checklistOf('```md title="plano"\n1. [x] A\n2. [ ] B\n```')).toBeNull()
+})
+
+test('a fence closes only with the same mark, at least as long, and nothing after it', () => {
+  // ```` is not closed by ```, nor ``` by ~~~, nor by a line with text after the mark.
+  expect(checklistOf('````\n```\n- [ ] A\n- [ ] B\n```\n````')).toBeNull()
+  expect(checklistOf('```\n~~~\n- [ ] A\n- [ ] B\n```')).toBeNull()
+  expect(checklistOf('```\n``` não fecha\n- [ ] A\n- [ ] B\n```')).toBeNull()
+  // A longer closer closes it; the checklist after it is the plan.
+  expect(checklistOf('```\nx\n`````\n- [ ] A\n- [ ] B')!.map(i => i.subject)).toEqual(['A', 'B'])
+  // A backtick line with a backtick after it is inline code, not a fence.
+  expect(checklistOf('```a``` b\n- [ ] A\n- [ ] B')!.map(i => i.subject)).toEqual(['A', 'B'])
+})
+
+test('an unclosed fence hides everything after it', () => {
+  expect(checklistOf('```\n- [ ] A\n- [ ] B\n\ntexto\n- [ ] C\n- [ ] D')).toBeNull()
+  expect(checklistOf('- [ ] Real A\n- [ ] Real B\n```\n- [ ] A\n- [ ] B')!.map(i => i.subject)).toEqual(['Real A', 'Real B'])
+})
+
+test('the real checklist before or after a fenced one is still found', () => {
+  const quoted = '```\n- [ ] Quoted A\n- [ ] Quoted B\n- [ ] Quoted C\n```'
+  expect(checklistOf(`- [ ] Real A\n- [x] Real B\n\n${quoted}`)!.map(i => i.subject)).toEqual(['Real A', 'Real B'])
+  expect(checklistOf(`${quoted}\n\n- [ ] Real A\n- [x] Real B`)!.map(i => i.subject)).toEqual(['Real A', 'Real B'])
+  // A fence line is other text: it ends the run before it.
+  expect(checklistOf('- [ ] A\n```\nx\n```\n- [ ] B')).toBeNull()
+})
+
+test('a checklist in a blockquote is a quote, not the plan', () => {
+  expect(checklistOf('Você escreveu:\n> - [ ] A\n> - [x] B')).toBeNull()
+  expect(checklistOf('   > - [ ] A\n   >\n   > - [ ] B')).toBeNull()
+  expect(checklistOf('> - [ ] Quoted\n> - [ ] Quoted 2\n\n- [ ] Real A\n- [ ] Real B')!.map(i => i.subject)).toEqual(['Real A', 'Real B'])
+})
+
+test('an indented code block outside a list is a quote; a checklist nested in a list is the plan', () => {
+  // 4 columns (or a tab) of indent after text or at the start: an indented code block.
+  expect(checklistOf('Exemplo:\n\n    - [ ] A\n    - [ ] B')).toBeNull()
+  expect(checklistOf('\t- [ ] A\n\t- [ ] B')).toBeNull()
+  expect(checklistOf('texto\n    - [ ] A\n    - [ ] B')).toBeNull()
+  // Up to 3 columns is still a checklist, as before.
+  expect(checklistOf('   - [ ] A\n   - [ ] B')!.map(i => i.subject)).toEqual(['A', 'B'])
+  // Under a list item, an indented checklist is a nested one, blank lines between or not.
+  expect(checklistOf('1. Plano\n    - [ ] A\n    - [x] B')!.map(i => [i.subject, i.status])).toEqual([['A', 'pending'], ['B', 'completed']])
+  expect(checklistOf('- Fase 1\n\n    - [ ] A\n\n\t- [ ] B')!.map(i => i.subject)).toEqual(['A', 'B'])
+  expect(checklistOf('- [ ] A\n    - [ ] A.1\n        - [ ] A.1.1\n- [ ] B')!.map(i => i.subject)).toEqual(['A', 'A.1', 'A.1.1', 'B'])
+  // Text at column 0 ends the list: the indented lines after it are code again.
+  expect(checklistOf('- Fase 1\nfim da lista\n\n    - [ ] A\n    - [ ] B')).toBeNull()
+  // A fence nested in a list may sit deeper than 3 columns, and still hides what it holds.
+  expect(checklistOf('1. Rode:\n     ```\n     - [ ] A\n     - [ ] B\n     ```')).toBeNull()
+})
+
+test('issue #20: a checklist quoted in a code block leaves the list unchanged', () => {
+  const answer = [
+    'Aqui está o prompt:',
+    '',
+    '```',
+    'Plan a dinner party.',
+    '  - [ ] Write 3 recipes',
+    '  - [ ] Compare ingredients',
+    '  - [ ] Write shopping list',
+    '  - [ ] Run npm test',
+    '```',
+    '',
+    'Cole no chat quando quiser.',
+  ].join('\n')
+  expect(applyAnswer([], answer)).toEqual([])
+  const plan = applyAnswer([], '1. [x] A\n2. [ ] B')
+  expect(applyAnswer(plan, answer)).toBe(plan)
+})
+
 test('the last checklist of an answer wins, keeps the calls counted, and never overrides a task tool', () => {
   const first = applyAnswer([], '1. [ ] A\n2. [ ] B')
   const counted = countCall(first)

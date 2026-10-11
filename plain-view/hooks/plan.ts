@@ -137,18 +137,77 @@ const keepCalls = (old: readonly Item[], next: Item[]): Item[] =>
 
 const CHECK = /^\s*(?:\d+[.)]|[-*+])\s+\[([ xX~>\-])\]\s+(.+?)\s*$/
 
+/** A list item of any kind, checklist or not. */
+const LIST = /^\s*(?:\d+[.)]|[-*+])\s/
+
+/** A code fence's line: three or more backticks or tildes, then an info string or nothing. */
+const FENCE = /^[ \t]*(`{3,}|~{3,})(.*)$/
+
+/** A blockquote's line. */
+const QUOTE = /^ {0,3}>/
+
+/** A line's indent in columns, a tab reaching the next multiple of 4. */
+const indentOf = (line: string) => {
+  let col = 0
+  for (const c of line) {
+    if (c === ' ') col++
+    else if (c === '\t') col += 4 - (col % 4)
+    else break
+  }
+  return col
+}
+
+/** An open code fence: its mark, its length, and whether it sits in a list (any indent closes it then). */
+type Fence = { char: string; size: number; isNested: boolean }
+
+/** The fence a line opens, or none: a backtick fence's info string holds no backtick. */
+const fenceOf = (line: string, isNested: boolean): Fence | null => {
+  const m = FENCE.exec(line)
+  if (!m || (m[1]![0] === '`' && m[2]!.includes('`'))) return null
+  return { char: m[1]![0]!, size: m[1]!.length, isNested }
+}
+
+/** Whether a line closes the fence: the same mark, at least as long, and only spaces after it. */
+const closes = (line: string, fence: Fence) => {
+  const m = FENCE.exec(line)
+  const isPlaced = fence.isNested || indentOf(line) <= 3
+  return !!m && isPlaced && m[1]![0] === fence.char && m[1]!.length >= fence.size && m[2]!.trim() === ''
+}
+
 /**
  * A checklist the agent wrote in its answer (`1. [ ] Ler a API`, `- [x] Montar o painel`), as a
  * task list: `[x]` done, `[~]` `[>]` `[-]` in progress, `[ ]` pending. Null under two items.
+ * A checklist the answer quotes is not the plan: one in a fenced code block (an unclosed fence
+ * runs to the end), a blockquote, or an indented code block.
  */
 export const checklistOf = (text: string): Item[] | null => {
   // The last run of checklist lines: blank lines may sit inside it, other text ends it.
   let items: Item[] = []
   let isOpen = false
+  let fence: Fence | null = null
+  // Inside a list, an indented line belongs to the list (a nested checklist); outside one, 4
+  // columns of indent make an indented code block. A line at column 0 that is no item ends the list.
+  let isInList = false
   for (const line of text.split('\n')) {
+    if (fence) {
+      if (closes(line, fence)) fence = null
+      continue
+    }
+    if (line.trim() === '') continue
+    const indent = indentOf(line)
+    const isNested = isInList && indent > 0
+    const opened = indent <= 3 || isNested ? fenceOf(line, isNested) : null
+    const isQuoted = !opened && (QUOTE.test(line) || (indent >= 4 && !isNested))
+    if (opened || isQuoted) {
+      fence = opened
+      isOpen = false
+      isInList = isNested
+      continue
+    }
+    isInList = isNested || LIST.test(line)
     const m = CHECK.exec(line)
     if (!m) {
-      if (line.trim() !== '') isOpen = false
+      isOpen = false
       continue
     }
     if (!isOpen) items = []

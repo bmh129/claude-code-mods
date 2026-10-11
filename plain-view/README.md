@@ -53,7 +53,8 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
   - with no task tool, the last checklist the agent writes in its answer (`1. [ ] Read the API`,
     `- [x] Build the page`) is the list. A shorter checklist that names some of its tasks (the
     two steps it just finished) ticks them off and keeps the rest; one that shares no task is a
-    new plan;
+    new plan. A checklist the answer quotes (in a code block, fenced or indented, or a `>`
+    quote) is not read as the plan;
   - before the agent writes a list: `Understand your request` and `Plan the steps`; with no
     list at all, the tool in flight;
   - the agents (subagents) the main turn starts, in one row: `◇ 1 agent running · code-review ·
