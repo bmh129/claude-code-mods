@@ -176,15 +176,20 @@ the card waits for them (`Waiting for 1 agent`). A turn with no list that called
 ends in a small green card (`✓ Done`, the time, the files and the agents); a plain conversation
 leaves none.
 
-Two options shape what you see, both in `/config`:
+Three options shape what you see, all in `/config`:
 
 - `agentText`, what stays of the agent's messages: `final` (default: the messages written before
   a tool call step aside, the final answer stays), `none`, `card` (the answer's first sentence in the end card) or
-  `all`. Failures, permission dialogs and the agent's questions always show.
+  `all`. Failures, permission dialogs and the agent's questions always show. The agent's
+  thinking is drawn outside any mod's reach; `"showThinkingSummaries": false` in
+  `~/.claude/settings.json` hides it everywhere, ctrl+o included.
 - `askForTasks` (on by default): one line in the system prompt asks the model to keep a task
   list for work of more than two steps, or a checklist in its reply when the session has no task
   tool, so the card shows each step; a few tokens per request.
   Off, the card reads the list the agent keeps on its own, or a checklist in its answer.
+- `request`, how much of a request of several lines the card's title shows: `line` (default: the
+  first line and `+5 lines`), `joined`, `auto` (the first line of prose) or `all`. The card's
+  `show request` button unfolds the whole request.
 
 ```
 /plain-view                   the settings pane: every option in three tabs, one click each

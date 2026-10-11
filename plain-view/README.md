@@ -4,9 +4,9 @@ A quiet transcript. The tool rows step aside, and the agent's plan shows as a ca
 prompt: the current step, a bar for the request and one for each task, and a summary when the
 turn ends.
 
-![plain-view: the card while the agent works, when the turn ends, waiting for an agent, and the palettes](../screenshots/plain-view.svg)
+![plain-view: the card while the agent works, when the turn ends, a request of several lines, waiting for an agent, and the palettes](../screenshots/plain-view.svg)
 
-Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-view-demos.sh`):
+Five short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-view-demos.sh`):
 
 **A task list** ([mp4](../screenshots/plain-view-tasks.mp4))
 
@@ -24,11 +24,16 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
 
 ![plain-view: a background agent](../screenshots/plain-view-agents.gif)
 
+**A request of several lines** ([mp4](../screenshots/plain-view-request.mp4))
+
+![plain-view: a request of several lines](../screenshots/plain-view-request.gif)
+
 - **Off until you turn it on:** `/plain-view on`, the `enabled` option in `/config`, or the
   switch in launchpad's panel (`◆ pad`). The hint line under the prompt ends in `plain view`
   while it is on.
 - **Tool rows:** a call that worked draws nothing, its result neither, and a folded run of reads
-  and searches neither. A failed or interrupted call draws in full, as Claude Code draws it.
+  and searches neither. A failed or interrupted call draws in full, as Claude Code draws it; in
+  a folded run, the run unfolds and only that call shows.
   The permission dialog, the agent's questions (`AskUserQuestion`), its plan (`ExitPlanMode`)
   and its helpers (`Agent`) are never touched.
 - **The agent's words** (`agentText`), while the mod is on:
@@ -42,8 +47,15 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
 
   A hidden message stays in the session: ctrl+o shows it, and `all` or `/plain-view off` draw
   it again. Failures, permission dialogs and the agent's questions show in every value.
+
+  The agent's thinking is not one of its messages: Claude Code draws it with no hook a mod can
+  reach, so no value hides it. To hide it, set `"showThinkingSummaries": false` in
+  `~/.claude/settings.json`; that hides it everywhere, ctrl+o included, until you set it back.
 - **The card**, above the prompt:
-  - the request's first line, and the time since it was sent;
+  - the request's first line, and the time since it was sent. A request of several lines adds
+    `+5 lines` and a `show request` button that unfolds it on the card until the next request;
+    the `request` option shows the lines joined, from the first line of prose (`auto`), or up
+    to 10 of them (`all`). A pasted code block shows as one line, `⟨code · 4 lines⟩`;
   - `Step 2 of 4` with a bar for the whole request and its percentage;
   - one row per task of the agent's list (`TaskCreate`/`TaskUpdate` or `TodoWrite`) with its
     own bar: `Done`, `~40%` on the current step and what it is doing (`reading weather.ts`, a
@@ -51,9 +63,14 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
     `Next`, `Up next`. A list longer than 6 shows the 5 tasks around the current one, with a
     count of the rest;
   - with no task tool, the last checklist the agent writes in its answer (`1. [ ] Read the API`,
-    `- [x] Build the page`) is the list. A shorter checklist that names some of its tasks (the
-    two steps it just finished) ticks them off and keeps the rest; one that shares no task is a
-    new plan;
+    `- [x] Build the page`) is the list, read as soon as the text before the step's first tool
+    call is whole, so that call counts toward the step the checklist opens. A shorter checklist
+    that names some of its tasks (the two steps it just finished) ticks them off and keeps the
+    rest; one that shares no task is a new plan. A checklist the answer quotes (in a code block, fenced or indented, or a `>`
+    quote) is not read as the plan. A checklist left open does not carry into the next request:
+    it comes back, with the calls it counted, only when an answer there writes one of its tasks
+    again, and is gone when that request ends without it. A task tool's list stays until every
+    task is done;
   - before the agent writes a list: `Understand your request` and `Plan the steps`; with no
     list at all, the tool in flight;
   - the agents (subagents) the main turn starts, in one row: `◇ 1 agent running · code-review ·
@@ -97,9 +114,9 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
 
 ## Settings pane
 
-`/plain-view` opens a pane, a tab like those of `/limits` and `/watch`, with the seven options in
-three tabs: **Transcript** (`enabled`, `agentText`, `askForTasks`), **Card** (`palette` with a
-sample of each, `animation`, and a preview of the card) and **General** (`language`, `icons`).
+`/plain-view` opens a pane, a tab like those of `/limits` and `/watch`, with the eight options in
+three tabs: **Transcript** (`enabled`, `agentText`, `askForTasks`), **Card** (`request`, `palette`
+with a sample of each, `animation`, and a preview of the card) and **General** (`language`, `icons`).
 Each value is a button with a line on what it does; a press saves it as `/config` would and the
 pane says `✓ Saved`. An option your organization sets (managed settings) shows its value and why
 it does not change. `defaults` asks first, then puts the others back to their defaults. In
@@ -135,6 +152,7 @@ Set them in `/config`, or under `pluginConfigs` in `settings.json`.
 | Option | Default | What it does |
 | --- | --- | --- |
 | `enabled` | `false` | Hide the tool rows that worked and show the card |
+| `request` | `line` | How much of a request of several lines the card's title shows: `line` (the first line and `+5 lines`), `joined` (all lines in one, cut at the card's width), `auto` (the first line of prose; list items such as `1. yes` go into the count), `all` (up to 10 lines under the title, then `+N lines`). The card's `show request` button unfolds the request, 10 lines at most |
 | `palette` | `claude` | The bar colors: `claude`, `clean`, `sunset`, `aurora`, `ocean`, `neon`, `forest`, `calm` |
 | `animation` | `true` | The shine on the bars and the gradient. Off: still bars in theme colors |
 | `agentText` | `final` | What stays of the agent's messages: `final` (the final answer), `none`, `card` (the answer's first sentence in the end card), `all` |

@@ -15,6 +15,8 @@ const show = (tree: unknown) => {
 type World = {
   answer: string
   toolUses: unknown[]
+  /** The chunks the step streams before its result, as the model's response arrives. */
+  chunks: unknown[]
   refused: string[]
   sets: { key: string; value: unknown }[]
   logs: string[]
@@ -37,7 +39,7 @@ type World = {
 /** The engine beneath the mod: options, turns and tools answered as a session would. */
 function engine(on: any, theme = 'dark'): World {
   const world: World = {
-    answer: '', toolUses: [], refused: [], sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }), listed: [], commands: [], ran: [],
+    answer: '', toolUses: [], chunks: [], refused: [], sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }), listed: [], commands: [], ran: [],
     rows: [], deny: null, choice: null, asked: [], opened: [], closed: [], isPlaced: true,
   }
   let id = 0
@@ -59,6 +61,7 @@ function engine(on: any, theme = 'dark'): World {
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }) as never)
   on('turn.complete', () => ({ text: 'done' }) as never)
   on('turn.step', async function* ($: any, e: any) {
+    yield* world.chunks
     return { turnId: e.turnId, index: e.index, answer: world.answer, toolUses: world.toolUses, stopReason: world.toolUses.length ? 'tool_use' : 'end_turn' }
   } as never)
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine', scope: 'shared' }] }) as never)
@@ -84,7 +87,7 @@ function engine(on: any, theme = 'dark'): World {
   on('ui.render', ($: any, e: any) => {
     const { Box, Text } = $.ui.resolve(e)
     if (e.component === 'PromptHint') return Text({ children: `hint: ${e.props.hint}${e.props.tail ? ` | tail: ${e.props.tail}` : ''}` }) as never
-    return Box({ key: 'engine', children: Text({ children: 'engine row' }) }) as never
+    return Box({ key: 'engine', children: Text({ children: `engine row${e.props.isExpanded ? ' unfolded' : ''}` }) }) as never
   })
   return world
 }
@@ -236,6 +239,30 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await row($, 'ToolGroup', { calls, isActive: false, isExpanded: false }, surface)).not.toContain('engine row')
     expect(await row($, 'ToolGroup', { calls: [...calls, { ...calls[0], isErrored: true }], isActive: false, isExpanded: false }, surface)).toContain('engine row')
   })
+
+  test(`a group with a failed or interrupted call unfolds, so its failure draws, on ${surface}`, ON, async ($, on) => {
+    engine(on)
+    await start($, surface)
+    const ok = { tool: 'Read', input: {}, isRunning: false, isErrored: false, isInterrupted: false }
+    const group = (calls: unknown[]) => ({ calls, isActive: false, isExpanded: false })
+    expect(await row($, 'ToolGroup', group([ok, { ...ok, tool: 'Bash', isErrored: true }]), surface)).toContain('engine row unfolded')
+    expect(await row($, 'ToolGroup', group([{ ...ok, tool: 'Bash', isInterrupted: true }]), surface)).toContain('engine row unfolded')
+    // A group with no failure is not unfolded: it steps aside, or draws as the engine does.
+    expect(await row($, 'ToolGroup', group([ok, ok]), surface)).not.toContain('engine row')
+    expect(await row($, 'ToolGroup', group([ok, { ...ok, tool: 'Agent' }]), surface)).not.toContain('unfolded')
+    // The unfolded rows: the ones that worked step aside, the failed one draws.
+    expect(await row($, 'ToolUse', toolUse('Read'), surface)).not.toContain('engine row')
+    expect(await row($, 'ToolUse', toolUse('Bash', { isErrored: true, output: 'Exit code 254' }), surface)).toContain('engine row')
+  })
+
+  test(`with the mod off, a group with a failure draws as the engine does on ${surface}`, { options: { ...ON.options, enabled: false } }, async ($, on) => {
+    engine(on)
+    await start($, surface)
+    const failed = { tool: 'Bash', input: {}, isRunning: false, isErrored: true, isInterrupted: false }
+    const drawn = await row($, 'ToolGroup', { calls: [failed], isActive: false, isExpanded: false }, surface)
+    expect(drawn).toContain('engine row')
+    expect(drawn).not.toContain('unfolded')
+  })
 }
 
 test('tool falhou: the failed call counts in the turn and the card goes on', ON, async ($, on) => {
@@ -299,6 +326,107 @@ test('a checklist in the agent\'s answer becomes the plan when it keeps no task 
   drawn = await card($)
   expect(drawn).toContain('Ler a API')
   expect(drawn).not.toContain('Outra coisa')
+})
+
+test('a checklist is read when the text before the first tool call is whole, so that call counts toward its step', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await ask($)
+  // The engine runs the step's tools while the response streams: the Write starts before the step ends.
+  const text = `Plano:\n\n${checklist(1).split('\n').slice(0, 2).join('\n')}`
+  w.answer = `${checklist(1)}`
+  w.toolUses = [{ name: 'Write', input: { file_path: 'caprese.md' } }]
+  w.chunks = [
+    { kind: 'text', index: 0, text: text.slice(0, 9) },
+    { kind: 'text', index: 0, text: `${text.slice(9)}\n${checklist(1).split('\n').slice(2).join('\n')}` },
+    { kind: 'tool', index: 1, id: 'tu1', name: 'Write' },
+    { kind: 'input', index: 1, json: '{"file_path":"caprese.md"}' },
+  ]
+  const stream = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 3 } as never)
+  const seen: string[] = []
+  for await (const chunk of stream) {
+    seen.push((chunk as { kind: string }).kind)
+    if ((chunk as { kind: string }).kind !== 'tool') continue
+    // The tool chunk came out with the checklist already read: step 2 is the current one.
+    await call($, 'Write', { file_path: 'caprese.md' })
+    const drawn = await card($)
+    expect(drawn).toContain('Passo 2 de 4')
+    expect(drawn).toContain('~25%')
+  }
+  // Every chunk passed on, in order; the end reads the same checklist again and changes nothing.
+  expect(seen).toEqual(['text', 'text', 'tool', 'input'])
+  const drawn = await card($)
+  expect(drawn).toContain('Passo 2 de 4')
+  expect(drawn).toContain('~25%')
+})
+
+test('a step with no tool call reads its checklist at the end, as before', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await ask($)
+  w.chunks = [{ kind: 'text', index: 0, text: checklist(0) }]
+  await step($, w, checklist(0))
+  expect(await card($)).toContain('Passo 1 de 4')
+})
+
+const RECIPES = ['Escolher 3 pratos', 'Escrever 3 receitas', 'Montar a lista de compras', 'Revisar']
+const checklist = (done: number) => RECIPES.map((t, i) => `${i + 1}. [${i < done ? 'x' : ' '}] ${t}`).join('\n')
+
+/** A request whose checklist is left open: the first task done, two calls on the second. */
+const leaveOpen = async ($: any, w: World) => {
+  await ask($, 'Escreva 3 receitas')
+  await step($, w, checklist(1))
+  await call($, 'Read', { file_path: '/repo/a.md' })
+  await call($, 'Read', { file_path: '/repo/b.md' })
+  await end($)
+}
+
+test('an open checklist stays off the next request\'s card and counts none of its calls', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await leaveOpen($, w)
+  await ask($, 'Analise os frames do vídeo')
+  let drawn = await card($)
+  expect(drawn).toContain('Entender o pedido')
+  expect(drawn).not.toContain('Escrever 3 receitas')
+  await call($, 'Read', { file_path: '/repo/frame1.png' })
+  await step($, w, 'Os frames mostram uma cozinha.')
+  drawn = await card($)
+  expect(drawn).toContain('frame1.png')
+  expect(drawn).not.toContain('Escrever 3 receitas')
+  await end($)
+  expect(await card($)).not.toContain('Escrever 3 receitas')
+})
+
+test('a continuation that writes the checklist again wakes it with the calls it counted', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await leaveOpen($, w)
+  await ask($, 'continue')
+  expect(await card($)).not.toContain('Escrever 3 receitas')
+  // Calls before the checklist comes back count for no task.
+  for (let i = 0; i < 3; i++) await call($, 'Read', { file_path: `/repo/r${i}.md` })
+  await step($, w, `Receitas prontas.\n\n${checklist(2)}`)
+  await call($, 'Read', { file_path: '/repo/c.md' })
+  const drawn = await card($)
+  expect(drawn).toContain('Passo 3 de 4')
+  // One call against the two the woken task kept: ~50%, not the 25% of a fresh list.
+  expect(drawn).toContain('~50%')
+})
+
+test('a request that ends without writing the checklist again drops it', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await leaveOpen($, w)
+  await ask($, 'Uma pergunta à parte')
+  await end($)
+  await ask($, 'continue')
+  await step($, w, checklist(2))
+  await call($, 'Read', { file_path: '/repo/c.md' })
+  const drawn = await card($)
+  expect(drawn).toContain('Passo 3 de 4')
+  // A fresh list: the calls of the first request are gone.
+  expect(drawn).toContain('~25%')
 })
 
 test('askForTasks: one line in the system prompt while the mod is on', { options: { enabled: true, askForTasks: true } }, async ($, on) => {
@@ -893,6 +1021,23 @@ test('aba Geral: language and icons', { options: { language: 'en', icons: 'symbo
   await ui.unmount()
 })
 
+test('aba Cartão: the request option, its four values, and a press that saves one', PT, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  const ui = await pane($)
+  await ui.press({ key: 'tab:1' })
+  let drawn = show(await ui.drawn())
+  expect(drawn).toContain('Pedido no cartão')
+  expect(drawn).toContain('● line')
+  for (const v of ['joined', 'auto', 'all']) expect(drawn).toContain(`"key":"set:request:${v}"`)
+  expect(drawn).toContain('A primeira linha de texto corrido')
+  await ui.press({ key: 'set:request:auto' })
+  expect(w.sets).toEqual([{ key: 'plain-view.request', value: 'auto' }])
+  drawn = show(await ui.drawn())
+  expect(drawn).toContain('✓ Salvo · Pedido no cartão: auto')
+  await ui.unmount()
+})
+
 test('a press saves the value as /config would, and says so', PT, async ($, on) => {
   const w = engine(on)
   await start($)
@@ -1006,4 +1151,93 @@ test('80 columns: the pane draws every tab', PT, async ($, on) => {
   }
   expect(show(await ui.drawn())).toContain('Ícones')
   await ui.unmount()
+})
+
+const MULTI = '1. sim\n2. sim\n\ntudo sobe na mesma branch e mesma versao de ajuste'
+const mountCard = ($: any) =>
+  $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'AbovePrompt', props: { bodyColumns: 120, hasSurvey: false, isWorking: true, maxRows: 20 }, viewport: { columns: 120, rows: 40 } } as never)
+
+test('a request of several lines: the first line, +N linhas and ver pedido, which unfolds it until the next request', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($, MULTI)
+  const ui = await mountCard($)
+  let drawn = show(await ui.drawn())
+  expect(drawn).toContain('1. sim')
+  expect(drawn).toContain('+2 linhas')
+  expect(drawn).toContain('"label":"ver pedido"')
+  expect(drawn).not.toContain('tudo sobe')
+  await ui.press({ key: 'request' })
+  drawn = show(await ui.drawn())
+  expect(drawn).toContain('2. sim')
+  expect(drawn).toContain('tudo sobe na mesma branch')
+  expect(drawn).toContain('"label":"recolher"')
+  expect(drawn).not.toContain('+2 linhas')
+  // A notification keeps it unfolded.
+  await ask($, '<task-notification>agent done</task-notification>')
+  expect(show(await ui.drawn())).toContain('"label":"recolher"')
+  await ui.unmount()
+  // The next request of several lines opens folded; one of one line has no count and no button.
+  await ask($, 'Outro pedido\ncom duas linhas')
+  drawn = await card($)
+  expect(drawn).toContain('+1 linha')
+  expect(drawn).toContain('"label":"ver pedido"')
+  expect(drawn).not.toContain('recolher')
+  await ask($, 'Adicione um comentário no topo do index.html')
+  drawn = await card($)
+  expect(drawn).not.toContain('linhas')
+  expect(drawn).not.toContain('ver pedido')
+})
+
+test('review: a narrow card keeps the title; the button steps aside first, then the count', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($, 'Corrija o teste de login\nlinha dois\nlinha três')
+  const wide = await card($, 'terminal', 100)
+  expect(wide).toContain('+2 linhas')
+  expect(wide).toContain('ver pedido')
+  const mid = await card($, 'terminal', 44)
+  expect(mid).toContain('+2 linhas')
+  expect(mid).not.toContain('ver pedido')
+  const narrow = await card($, 'terminal', 30)
+  expect(narrow).not.toContain('+2 linhas')
+  expect(narrow).toContain('Corrija')
+})
+
+test('request auto: the first line of prose leads the card, on the end card too', { options: { ...ON.options, request: 'auto' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($, MULTI)
+  expect(await card($)).toContain('tudo sobe na mesma branch')
+  await call($, 'Read', { file_path: 'a.md' })
+  await end($)
+  const drawn = await card($)
+  expect(drawn).toContain('Pronto')
+  expect(drawn).toContain('tudo sobe na mesma branch')
+  expect(drawn).toContain('+2 linhas')
+})
+
+test('request joined: one line, and the button only when it is cut', { options: { ...ON.options, request: 'joined' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($, 'Faça isso\ne aquilo')
+  let drawn = await card($)
+  expect(drawn).toContain('Faça isso · e aquilo')
+  expect(drawn).not.toContain('ver pedido')
+  await ask($, `Faça isso\n${'e aquilo também, '.repeat(12)}`)
+  drawn = await card($, 'terminal', 80)
+  expect(drawn).toContain('Faça isso · e aquilo')
+  expect(drawn).toContain('ver pedido')
+})
+
+test('request all: every line under the title, pasted code as one line', { options: { ...ON.options, request: 'all' } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($, 'Corrija o erro:\n```\nTypeError: x\n    at a\n```\nE rode os testes.')
+  const drawn = await card($)
+  expect(drawn).toContain('Corrija o erro:')
+  expect(drawn).toContain('⟨código · 2 linhas⟩')
+  expect(drawn).toContain('E rode os testes.')
+  expect(drawn).not.toContain('TypeError')
+  expect(drawn).not.toContain('ver pedido')
 })

@@ -28,7 +28,12 @@ import {
   spawnAgent,
   startTurn,
   titleOf,
+  requestLinesOf,
+  requestModeOf,
+  requestViewOf,
+  REQUEST_ROWS,
   touch,
+  wake,
   windowAround,
 } from '../hooks/plan'
 
@@ -64,8 +69,57 @@ test('a turn a notification starts keeps the last title, or says an agent finish
 test('the task list outlives a turn only while a task is open', () => {
   const open = at(created(), ['completed', 'in_progress'])
   expect(startTurn(null, open, 'continue', NOW, 'en').items).toHaveLength(4)
+  expect(startTurn(null, open, 'continue', NOW, 'en').dormant).toEqual([])
   const closed = at(created(), ['completed', 'completed', 'completed', 'completed'])
   expect(startTurn(null, closed, 'next', NOW, 'en').items).toEqual([])
+})
+
+const RECIPES = '1. [x] Pick 3 dishes\n2. [ ] Write 3 recipes\n3. [ ] Add a shopping list\n4. [ ] Review'
+
+test('an open checklist from the text sleeps at the next request: not on the card, no calls', () => {
+  const open = countCall(applyAnswer([], RECIPES))
+  const next = startTurn(fresh().turn, open, 'Analyze these video frames', NOW, 'en')
+  expect(next.items).toEqual([])
+  expect(next.dormant).toBe(open)
+  const card = cardOf(next.turn, next.items, NOW + 3000, 'en')!
+  expect(card.kind === 'plan' && card.label).toBe('Step 1 of 2')
+  // A notification goes on with the same request: the checklist stays awake.
+  const notice = '<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>'
+  expect(startTurn(fresh().turn, open, notice, NOW, 'en')).toMatchObject({ items: open, dormant: [] })
+  // All done, or a demo before it: nothing carries, awake or asleep.
+  const done = applyAnswer([], RECIPES.replace(/\[ \]/g, '[x]'))
+  expect(startTurn(fresh().turn, done, 'next', NOW, 'en')).toMatchObject({ items: [], dormant: [] })
+  const demo = demoOf(1, NOW, 'en')
+  expect(startTurn(demo.turn, applyAnswer([], RECIPES), 'real', NOW, 'en')).toMatchObject({ items: [], dormant: [] })
+})
+
+test('a checklist that shares a task wakes the sleeping one, with its calls and ticks', () => {
+  const asleep = countCall(countCall(applyAnswer([], RECIPES)))
+  expect(asleep[1]!.calls).toBe(2)
+  // Written again in full, a step further on.
+  const full = wake([], asleep, RECIPES.replace('2. [ ]', '2. [x]'))
+  expect(full.dormant).toEqual([])
+  expect(full.items.map(i => [i.subject, i.status, i.calls])).toEqual([
+    ['Pick 3 dishes', 'completed', 0],
+    ['Write 3 recipes', 'completed', 2],
+    ['Add a shopping list', 'pending', 0],
+    ['Review', 'pending', 0],
+  ])
+  // Only the steps just done: they tick off, the rest of the sleeping list stays.
+  const part = wake([], asleep, 'Done:\n- [x] Write 3 recipes\n- [x] **Add a shopping list**')
+  expect(part.items.map(i => i.status)).toEqual(['completed', 'completed', 'completed', 'pending'])
+  expect(part.items[1]!.calls).toBe(2)
+  // An answer with no checklist leaves it asleep.
+  expect(wake([], asleep, 'Looking at the frames.')).toEqual({ items: [], dormant: asleep })
+})
+
+test('a checklist that shares no task is the list, and the sleeping one is dropped', () => {
+  const asleep = countCall(applyAnswer([], RECIPES))
+  const other = wake([], asleep, '- [ ] Extract the frames\n- [ ] Describe each scene')
+  expect(other.items.map(i => [i.subject, i.calls])).toEqual([['Extract the frames', 0], ['Describe each scene', 0]])
+  expect(other.dormant).toEqual([])
+  // With no sleeping list, an answer does what applyAnswer does.
+  expect(wake([], [], RECIPES).items).toEqual(applyAnswer([], RECIPES))
 })
 
 test('TaskCreate adds with its id, TaskUpdate changes and deletes, TodoWrite replaces', () => {
@@ -314,6 +368,79 @@ test('a checklist in the answer: done, in progress, pending; under two items is 
   // Loose list items (blank lines between them) are one list.
   expect(checklistOf('1. [x] Ler a API\n\n2. [ ] Montar o painel\n\n3. [ ] Publicar')!.map(i => i.subject)).toEqual(['Ler a API', 'Montar o painel', 'Publicar'])
   expect(checklistOf('nada aqui')).toBeNull()
+})
+
+test('a checklist in a fenced code block is a quote, not the plan: ``` and ~~~', () => {
+  expect(checklistOf('Use este prompt:\n```\n- [ ] Escrever 3 receitas\n- [ ] Comparar ingredientes\n```')).toBeNull()
+  expect(checklistOf('Exemplo:\n~~~markdown\n  - [ ] A\n  - [ ] B\n~~~\nfim')).toBeNull()
+  // An info string may follow the opener; the fence lines themselves are no items.
+  expect(checklistOf('```md title="plano"\n1. [x] A\n2. [ ] B\n```')).toBeNull()
+})
+
+test('a fence closes only with the same mark, at least as long, and nothing after it', () => {
+  // ```` is not closed by ```, nor ``` by ~~~, nor by a line with text after the mark.
+  expect(checklistOf('````\n```\n- [ ] A\n- [ ] B\n```\n````')).toBeNull()
+  expect(checklistOf('```\n~~~\n- [ ] A\n- [ ] B\n```')).toBeNull()
+  expect(checklistOf('```\n``` não fecha\n- [ ] A\n- [ ] B\n```')).toBeNull()
+  // A longer closer closes it; the checklist after it is the plan.
+  expect(checklistOf('```\nx\n`````\n- [ ] A\n- [ ] B')!.map(i => i.subject)).toEqual(['A', 'B'])
+  // A backtick line with a backtick after it is inline code, not a fence.
+  expect(checklistOf('```a``` b\n- [ ] A\n- [ ] B')!.map(i => i.subject)).toEqual(['A', 'B'])
+})
+
+test('an unclosed fence hides everything after it', () => {
+  expect(checklistOf('```\n- [ ] A\n- [ ] B\n\ntexto\n- [ ] C\n- [ ] D')).toBeNull()
+  expect(checklistOf('- [ ] Real A\n- [ ] Real B\n```\n- [ ] A\n- [ ] B')!.map(i => i.subject)).toEqual(['Real A', 'Real B'])
+})
+
+test('the real checklist before or after a fenced one is still found', () => {
+  const quoted = '```\n- [ ] Quoted A\n- [ ] Quoted B\n- [ ] Quoted C\n```'
+  expect(checklistOf(`- [ ] Real A\n- [x] Real B\n\n${quoted}`)!.map(i => i.subject)).toEqual(['Real A', 'Real B'])
+  expect(checklistOf(`${quoted}\n\n- [ ] Real A\n- [x] Real B`)!.map(i => i.subject)).toEqual(['Real A', 'Real B'])
+  // A fence line is other text: it ends the run before it.
+  expect(checklistOf('- [ ] A\n```\nx\n```\n- [ ] B')).toBeNull()
+})
+
+test('a checklist in a blockquote is a quote, not the plan', () => {
+  expect(checklistOf('Você escreveu:\n> - [ ] A\n> - [x] B')).toBeNull()
+  expect(checklistOf('   > - [ ] A\n   >\n   > - [ ] B')).toBeNull()
+  expect(checklistOf('> - [ ] Quoted\n> - [ ] Quoted 2\n\n- [ ] Real A\n- [ ] Real B')!.map(i => i.subject)).toEqual(['Real A', 'Real B'])
+})
+
+test('an indented code block outside a list is a quote; a checklist nested in a list is the plan', () => {
+  // 4 columns (or a tab) of indent after text or at the start: an indented code block.
+  expect(checklistOf('Exemplo:\n\n    - [ ] A\n    - [ ] B')).toBeNull()
+  expect(checklistOf('\t- [ ] A\n\t- [ ] B')).toBeNull()
+  expect(checklistOf('texto\n    - [ ] A\n    - [ ] B')).toBeNull()
+  // Up to 3 columns is still a checklist, as before.
+  expect(checklistOf('   - [ ] A\n   - [ ] B')!.map(i => i.subject)).toEqual(['A', 'B'])
+  // Under a list item, an indented checklist is a nested one, blank lines between or not.
+  expect(checklistOf('1. Plano\n    - [ ] A\n    - [x] B')!.map(i => [i.subject, i.status])).toEqual([['A', 'pending'], ['B', 'completed']])
+  expect(checklistOf('- Fase 1\n\n    - [ ] A\n\n\t- [ ] B')!.map(i => i.subject)).toEqual(['A', 'B'])
+  expect(checklistOf('- [ ] A\n    - [ ] A.1\n        - [ ] A.1.1\n- [ ] B')!.map(i => i.subject)).toEqual(['A', 'A.1', 'A.1.1', 'B'])
+  // Text at column 0 ends the list: the indented lines after it are code again.
+  expect(checklistOf('- Fase 1\nfim da lista\n\n    - [ ] A\n    - [ ] B')).toBeNull()
+  // A fence nested in a list may sit deeper than 3 columns, and still hides what it holds.
+  expect(checklistOf('1. Rode:\n     ```\n     - [ ] A\n     - [ ] B\n     ```')).toBeNull()
+})
+
+test('issue #20: a checklist quoted in a code block leaves the list unchanged', () => {
+  const answer = [
+    'Aqui está o prompt:',
+    '',
+    '```',
+    'Plan a dinner party.',
+    '  - [ ] Write 3 recipes',
+    '  - [ ] Compare ingredients',
+    '  - [ ] Write shopping list',
+    '  - [ ] Run npm test',
+    '```',
+    '',
+    'Cole no chat quando quiser.',
+  ].join('\n')
+  expect(applyAnswer([], answer)).toEqual([])
+  const plan = applyAnswer([], '1. [x] A\n2. [ ] B')
+  expect(applyAnswer(plan, answer)).toBe(plan)
 })
 
 test('the last checklist of an answer wins, keeps the calls counted, and never overrides a task tool', () => {
@@ -567,4 +694,96 @@ test('the end card counts the files shell commands changed, once each', () => {
   expect(t.changed).toEqual(['/repo/css/site.css', '/repo/js/theme.js', 'index.html', 'about.html'])
   const card = cardOf(endTurn(t, 'answer', NOW + 450_000), [], NOW + 450_000, 'en')!
   expect(card.kind === 'summary' && card.detail).toBe('changed 4 files · read 2 files')
+})
+
+const SCREENSHOT = '1. sim\n2. sim§. sim\n4. sim\n5. "Fala e pensamento do agent"\n\ntudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só'
+const turnOf = (text: string) => startTurn(null, [], text, 0, 'pt-BR').turn
+
+test('a request\'s lines: blank lines go, a fenced code block is one line that counts its own', () => {
+  expect(requestLinesOf(SCREENSHOT)).toEqual(['1. sim', '2. sim§. sim', '4. sim', '5. "Fala e pensamento do agent"', 'tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só'])
+  expect(requestLinesOf('Corrija o erro:\n```js\nconst a = 1\n\nfoo(a)\n```\nE rode os testes.')).toEqual(['Corrija o erro:', { code: 3 }, 'E rode os testes.'])
+  // A ~~~ fence is closed only by ~~~ as long; one left open counts what it held.
+  expect(requestLinesOf('Veja:\n~~~~\na\n```\n~~~~\nfim')).toEqual(['Veja:', { code: 2 }, 'fim'])
+  expect(requestLinesOf('Veja:\n```\na\nb')).toEqual(['Veja:', { code: 2 }])
+  // Notifications before the request are not lines of it; runs of space fold.
+  expect(requestLinesOf('<task-notification>x</task-notification>\nFaça   isso\ne aquilo')).toEqual(['Faça isso', 'e aquilo'])
+})
+
+test('a turn keeps its request\'s lines only when it has more than one; a notification keeps the last ones', () => {
+  expect(turnOf('Adicione um comentário').lines).toBeUndefined()
+  const t = turnOf(SCREENSHOT)
+  expect(t.title).toBe('1. sim')
+  expect(t.lines).toHaveLength(5)
+  const notice = startTurn(t, [], '<task-notification>done</task-notification>', 1, 'pt-BR').turn
+  expect(notice.title).toBe('1. sim')
+  expect(notice.lines).toEqual(t.lines)
+})
+
+test('the request option: line, joined, auto and all; open shows every line; one line has no view', () => {
+  const t = turnOf(SCREENSHOT)
+  expect(requestModeOf(undefined)).toBe('line')
+  expect(requestModeOf('3')).toBe('line')
+  expect(requestModeOf('auto')).toBe('auto')
+  expect(requestViewOf(t, 'line', false, 'pt-BR')).toEqual({ title: '1. sim', request: { rest: [], more: 4, isOpen: false, isJoined: false, canOpen: true } })
+  expect(requestViewOf(t, 'auto', false, 'pt-BR').title).toBe('tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só')
+  expect(requestViewOf(t, 'auto', false, 'pt-BR').request?.more).toBe(4)
+  const joined = requestViewOf(t, 'joined', false, 'pt-BR')
+  expect(joined.title).toBe('1. sim · 2. sim§. sim · 4. sim · 5. "Fala e pensamento do agent" · tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só')
+  expect(joined.request).toEqual({ rest: [], more: 0, isOpen: false, isJoined: true, canOpen: false })
+  expect(requestViewOf(t, 'all', false, 'pt-BR')).toEqual({ title: '1. sim', request: { rest: ['2. sim§. sim', '4. sim', '5. "Fala e pensamento do agent"', 'tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só'], more: 0, isOpen: false, isJoined: false, canOpen: false } })
+  expect(requestViewOf(t, 'joined', true, 'pt-BR').request).toEqual({ rest: expect.any(Array), more: 0, isOpen: true, isJoined: false, canOpen: true })
+  // auto with no prose: the first list item that reads as a sentence, else the first line.
+  expect(requestViewOf(turnOf('1. sim\n2. corrija o teste agora'), 'auto', false, 'pt-BR').title).toBe('2. corrija o teste agora')
+  expect(requestViewOf(turnOf('1. sim\n2. não'), 'auto', false, 'pt-BR').title).toBe('1. sim')
+  expect(requestViewOf(turnOf('Uma linha só'), 'all', false, 'pt-BR')).toEqual({ title: 'Uma linha só' })
+})
+
+test('pasted code shows as a line that counts its own, in both languages', () => {
+  const t = turnOf('Corrija:\n```\na\nb\n```')
+  expect(requestViewOf(t, 'all', false, 'pt-BR').request?.rest).toEqual(['⟨código · 2 linhas⟩'])
+  expect(requestViewOf(t, 'joined', false, 'en').title).toBe('Corrija: · ⟨code · 2 lines⟩')
+})
+
+test('every card carries the request view: plan, phrase, waiting and summary', () => {
+  const t = turnOf(SCREENSHOT)
+  const view = { mode: 'line' as const, isOpen: false }
+  expect(cardOf(t, [], 1000, 'pt-BR', false, [], view)).toMatchObject({ kind: 'plan', title: '1. sim', request: { more: 4 } })
+  expect(cardOf({ ...t, calls: 1, doing: 'lendo' }, [], 1000, 'pt-BR', false, [], view)).toMatchObject({ kind: 'phrase', request: { more: 4 } })
+  expect(cardOf({ ...t, calls: 1, end: 'answer', endedAt: 900 }, [], 1000, 'pt-BR', false, [], view)).toMatchObject({ kind: 'summary', request: { more: 4 } })
+  expect(cardOf({ ...t, end: 'answer', endedAt: 900 }, [], 1000, 'pt-BR', false, [{ id: 'a', label: 'x', startedAt: 0 }], view)).toMatchObject({ kind: 'waiting', request: { more: 4 } })
+  expect(cardOf(turnOf('Uma linha'), [], 1000, 'pt-BR', false, [], view)).not.toHaveProperty('request')
+})
+
+test('review: a ``` line with a backtick after it is inline code, not a fence', () => {
+  expect(requestLinesOf('```npm test``` falha\nconserte o teste')).toEqual(['```npm test``` falha', 'conserte o teste'])
+  expect(requestLinesOf('Veja:\n    ```\nnão é fence')).toEqual(['Veja:', '```', 'não é fence'])
+})
+
+test('review: a request that is only a code block titles the card with its count', () => {
+  const t = turnOf('```python\nprint(1)\nprint(2)\n```')
+  expect(t.lines).toEqual([{ code: 2 }])
+  expect(requestViewOf(t, 'line', false, 'pt-BR')).toEqual({ title: '⟨código · 2 linhas⟩' })
+})
+
+test('review: all and unfolded draw REQUEST_ROWS lines at most, and count the rest', () => {
+  const t = turnOf(Array.from({ length: 25 }, (_, i) => `linha ${i + 1}`).join('\n'))
+  const all = requestViewOf(t, 'all', false, 'pt-BR').request!
+  expect(all.rest).toHaveLength(REQUEST_ROWS)
+  expect(all.more).toBe(24 - REQUEST_ROWS)
+  expect(all.canOpen).toBe(false)
+  const open = requestViewOf(t, 'line', true, 'pt-BR').request!
+  expect(open.rest).toHaveLength(REQUEST_ROWS)
+  expect(open.canOpen).toBe(true)
+})
+
+test('review: a continuation (no text) keeps the request, its lines and its open checklist awake', () => {
+  const items = [{ subject: 'A', status: 'completed', calls: 2, fromText: true }, { subject: 'B', status: 'pending', calls: 0, fromText: true }] as Item[]
+  const t = turnOf(SCREENSHOT)
+  const next = startTurn(t, items, '', 5, 'pt-BR')
+  expect(next.turn.title).toBe('1. sim')
+  expect(next.turn.lines).toEqual(t.lines)
+  expect(next.items).toEqual(items)
+  expect(next.dormant).toEqual([])
+  // A typed request still puts it to sleep.
+  expect(startTurn(t, items, 'Outra coisa', 5, 'pt-BR').dormant).toEqual(items)
 })

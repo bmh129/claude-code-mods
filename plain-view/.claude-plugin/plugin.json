@@ -1,6 +1,6 @@
 {
   "name": "plain-view",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "A quiet transcript: tool rows step aside and the agent's plan shows as a card above the prompt, with the current step, progress bars and a summary when the turn ends",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -21,6 +21,18 @@
         "all"
       ],
       "default": "final"
+    },
+    "request": {
+      "type": "string",
+      "title": "Request on the card",
+      "description": "How much of a request of several lines the card's title shows. line: the first line and how many are left (+5 lines). joined: all lines in one, cut at the card's width. auto: the first line of prose, so list items (1. yes) go into the count. all: up to 10 lines under the title. A pasted code block shows as one line that counts its lines. The card's show request button unfolds the whole request",
+      "options": [
+        "line",
+        "joined",
+        "auto",
+        "all"
+      ],
+      "default": "line"
     },
     "palette": {
       "type": "string",

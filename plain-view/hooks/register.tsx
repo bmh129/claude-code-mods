@@ -14,16 +14,20 @@
 //          agente`). A turn with no list that called tools or agents ends in a small card
 //          (`✓ Pronto`, the time, the files and the agents); a plain conversation leaves none.
 //   plan   from the agent's TaskCreate, TaskUpdate and TodoWrite calls, else from a checklist it
-//          writes in its answer (`1. [ ] Ler a API`). The `askForTasks` option asks the model, in
-//          the system prompt, to keep a task list with those tools, or a checklist in its reply
-//          when the session has none.
+//          writes in its answer (`1. [ ] Ler a API`). An open checklist sleeps at the next request
+//          and wakes only if an answer writes one of its tasks again. The `askForTasks` option
+//          asks the model, in the system prompt, to keep a task list with those tools, or a
+//          checklist in its reply when the session has none.
+//   title  the request's first line, and `+5 linhas` when it has more; the `request` option shows
+//          them joined, from the first line that reads as a sentence, or all of them. The card's
+//          `ver pedido` button unfolds the whole request until the next one.
 //   words  `agentText`: final (the default) hides the text of each step that went on to call
 //          tools, so the final answer stays; none hides every message; card hides them all and
 //          puts the answer's first sentence in the end card; all keeps every word.
 //   bars   a gradient of the `palette` option's colors, and a shine that runs while the agent
 //          works (`animation`); see palettes.ts and the design guide's "Exception: gradients".
 //   pane   /plain-view alone, or /plain-view config: a pane (a tab like /limits and /watch) with
-//          the seven options in three tabs, Transcript, Card and General. Each value is a button
+//          the eight options in three tabs, Transcript, Card and General. Each value is a button
 //          that saves it as /config would ($.config.set); the engine reloads the mod with it, and
 //          the pane opens again if the reload closed it. A locked option (managed settings) shows
 //          its value and why it does not change; `defaults` asks first, then resets them all.
@@ -43,7 +47,6 @@ import { PALETTES, paletteOf, stopsOf } from './palettes'
 import type { Palette } from './palettes'
 import {
   agentTextOf,
-  applyAnswer,
   applyTask,
   cardOf,
   countCall,
@@ -56,13 +59,17 @@ import {
   NEVER_HIDDEN,
   normalize,
   reconcileAgents,
+  requestModeOf,
   runningOf,
   showsBlock,
   spawnAgent,
   startTurn,
   TASK_TOOLS,
+  titleOf,
   touch,
+  wake,
 } from './plan'
+import type { RequestMode } from './plan'
 import type { Setting, SettingKey, SettingValue } from './settings'
 import { awayFromDefaults, SETTINGS, settingsOf, tabOf, TABS } from './settings'
 import type { IconStyle, Lang, Verb } from './ui'
@@ -71,6 +78,8 @@ import { COMMAND, MODE, WATCH, WORDS } from './words'
 
 const turn = atom({ plugin: 'plain-view', key: 'turn' } as const, null as Turn | null)
 const items = atom({ plugin: 'plain-view', key: 'items' } as const, [] as Item[])
+const dormant = atom({ plugin: 'plain-view', key: 'dormant' } as const, [] as Item[])
+const unfolded = atom({ plugin: 'plain-view', key: 'unfolded' } as const, false)
 const tick = atom({ plugin: 'plain-view', key: 'tick' } as const, 0)
 const mids = atom({ plugin: 'plain-view', key: 'mids' } as const, [] as string[])
 const agents = atom({ plugin: 'plain-view', key: 'agents' } as const, [] as Agent[])
@@ -97,6 +106,7 @@ let palette: Palette = paletteOf(undefined)
 let animate = true
 let askForTasks = true
 let agentText: AgentText = 'final'
+let requestMode: RequestMode = 'line'
 let theme: unknown = 'dark'
 // The timers of this load; a reload starts them again from session.start.
 let ticker: Timer | null = null
@@ -157,7 +167,7 @@ const setOption = async ($: EngineInterface, key: string, value: unknown): Promi
   return result && 'deny' in result && result.deny !== undefined ? String(result.deny) : null
 }
 
-/** The seven options as /config holds them now. */
+/** The eight options as /config holds them now. */
 const settingsNow = async ($: EngineInterface) => settingsOf(await $.config.list().catch(() => []), loaded)
 
 const openPane = ($: EngineInterface) =>
@@ -206,7 +216,7 @@ const resetOptions = async ($: EngineInterface) => {
   await update($, resetting, () => false)
 }
 
-/** `defaults`: asks first, since it may change all seven at once. */
+/** `defaults`: asks first, since it may change all eight at once. */
 const askReset = async ($: EngineInterface) => {
   const p = WORDS[lang].pane
   if (awayFromDefaults(await settingsNow($)).length === 0) {
@@ -288,6 +298,25 @@ const pressVerb = async ($: EngineInterface, v: Verb) => {
   for (const line of linesOf(text)) $.ui.log(line)
 }
 
+/** A checklist in the agent's text becomes the plan, or wakes the one the last request left open. */
+const readChecklist = async ($: EngineInterface, text: string) => {
+  if (!text.trim()) return
+  try {
+    // The list is changed from its current value: the step's tools may have counted calls on it
+    // since the step began.
+    const sleeping = await read($, dormant)
+    let left = sleeping
+    await update($, items, list => {
+      const woke = wake(list, sleeping, text)
+      left = woke.dormant
+      return woke.items
+    })
+    if (left !== sleeping) await update($, dormant, () => left)
+  } catch {
+    // An observer: the step goes on.
+  }
+}
+
 /** True when a row of this tool, in this state, steps aside. */
 const hides = (tool: string, isErrored: boolean, isInterrupted: boolean) => isOn && !isErrored && !isInterrupted && !NEVER_HIDDEN.includes(tool)
 
@@ -299,6 +328,7 @@ export const register: Register = (on, options) => {
   animate = options.animation !== false
   askForTasks = options.askForTasks !== false
   agentText = agentTextOf(options.agentText)
+  requestMode = requestModeOf(options.request)
   loaded = options
 
   on('session.start', async ($, e, next) => {
@@ -351,7 +381,10 @@ export const register: Register = (on, options) => {
     const now = await $.clock.now()
     const fresh = startTurn(await read($, turn), await read($, items), e.text, now, lang)
     await update($, items, () => fresh.items)
+    await update($, dormant, () => fresh.dormant).catch(() => undefined)
     await update($, turn, () => fresh.turn)
+    // A new request opens folded; a notification or a continuation keeps it as it was.
+    if (titleOf(e.text)) await update($, unfolded, () => false).catch(() => undefined)
     // A new request keeps the agents still running; a notification keeps the finished ones too.
     await update($, agents, list => keepAgents(list, e.text))
     if (isOn) startTicking($, runningOf(await read($, agents)).length > 0)
@@ -376,11 +409,28 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  // The agent's answer at the end of each step: a checklist in it becomes the plan.
+  // The agent's answer at the end of each step: a checklist in it becomes the plan, or wakes the
+  // one the last request left open.
+  // A checklist is read as soon as the text before the step's first tool call is whole, so the
+  // calls that follow count toward the step it opens; the whole answer is read again at the end.
   on('turn.step', async function* ($, e, next) {
-    const result = yield* next(e)
-    if (!e.agentId && result.answer) {
-      await update($, items, list => applyAnswer(list, result.answer)).catch(() => undefined)
+    if (e.agentId) return yield* next(e)
+    const stream = next(e)
+    // A stream the engine closes early rejects its result; nothing here waits on it then.
+    stream.result.catch(() => undefined)
+    const texts: string[] = []
+    let isRead = false
+    for await (const chunk of stream) {
+      if (chunk.kind === 'text') texts[chunk.index] = (texts[chunk.index] ?? '') + chunk.text
+      else if (chunk.kind === 'tool' && !isRead) {
+        isRead = true
+        await readChecklist($, texts.join('\n'))
+      }
+      yield chunk
+    }
+    const result = await stream.result
+    if (result.answer) {
+      await readChecklist($, result.answer)
       // A step that went on to call tools: its text is mid-turn, which `final` hides.
       const text = normalize(result.answer)
       if (result.toolUses.length > 0 && text) await update($, mids, list => [...list, text].slice(-MID_KEPT)).catch(() => undefined)
@@ -406,6 +456,7 @@ export const register: Register = (on, options) => {
       const refused = (result.result as { success?: unknown } | undefined)?.success === false
       if (result.deny === undefined && !('isError' in result && result.isError) && !refused) {
         await update($, items, list => applyTask(list, e.tool, input, result.result)).catch(() => undefined)
+        await update($, dormant, () => []).catch(() => undefined)
       }
       return result
     }
@@ -440,7 +491,8 @@ export const register: Register = (on, options) => {
     if (!isOn && !t?.isDemo) return next(e)
     // A demo's card shows no agents.
     const team = t?.isDemo ? [] : await read($, agents)
-    const card = cardOf(t, await read($, items), await $.clock.now(), lang, agentText === 'card', team)
+    const view = { mode: requestMode, isOpen: await read($, unfolded) }
+    const card = cardOf(t, await read($, items), await $.clock.now(), lang, agentText === 'card', team, view)
     if (!card) return next(e)
     const n = await read($, tick)
     const isWorking = (t !== null && t.end === undefined) || runningOf(team).length > 0
@@ -454,6 +506,8 @@ export const register: Register = (on, options) => {
       icons: style,
       answerLabel: WORDS[lang].answer,
       ...(hasWatch ? { onWatch: () => quietly($.command.run({ command: WATCH, args: '' })) } : {}),
+      request: { more: WORDS[lang].moreLines, show: WORDS[lang].showRequest, fold: WORDS[lang].foldRequest },
+      onRequest: () => quietly(update($, unfolded, v => !v)),
     })
     const { Box } = $.ui.resolve(e)
     const theirs = await next(e)
@@ -489,7 +543,10 @@ export const register: Register = (on, options) => {
     return <Box />
   })
 
+  // A group folds its calls into one count line, which would hide a failure: a group with a failed
+  // or interrupted call unfolds, and its rows go through the ToolUse hook above, one by one.
   on('ui.render', { component: 'ToolGroup' }, ($, e, next) => {
+    if (isOn && e.props.calls.some(c => c.isErrored || c.isInterrupted)) return next({ ...e, props: { ...e.props, isExpanded: true } })
     if (!e.props.calls.every(c => hides(c.tool, c.isErrored, c.isInterrupted))) return next(e)
     const { Box } = $.ui.resolve(e)
     return <Box />

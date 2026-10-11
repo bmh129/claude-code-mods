@@ -36,6 +36,11 @@ test('snap', { options: { enabled: true, language: 'en', icons: 'symbol' } }, as
   now += 96_000
   await $.turn.complete({ answer: 'ok', durationMs: 107_000, isAborted: false, turnId: 't1', reason: 'answer' } as never)
   await band()
+  // A request of several lines: its first line, `+2 lines` and the button that unfolds it.
+  await $.turn.start({ text: '1. yes\n2. yes, on the same branch\n\nShip it all in one fix version and open a single PR', turnId: 't3' } as never)
+  now += 4_000
+  await $.tool.call({ tool: 'Read', file_path: '/repo/notes/plan.md' } as never)
+  await band()
   // A request that hands the review to a background agent: the main turn ends, the card waits.
   await $.turn.start({ text: 'Review the code and open the PR', turnId: 't2' } as never)
   await $.tool.call({ tool: 'Agent', description: 'code-review', prompt: 'review', subagent_type: 'general-purpose', run_in_background: true } as never)

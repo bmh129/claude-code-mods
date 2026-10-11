@@ -31,7 +31,12 @@ export type Turn = {
   isDemo?: boolean
   /** The answer's first sentence, for the end card under `agentText: card`. */
   answer?: string
+  /** The request's lines, when it has more than one; the card's `request` option reads them. */
+  lines?: RequestLine[]
 }
+
+/** A line of the request: its text, or a fenced code block as the number of lines it held. */
+export type RequestLine = string | { code: number }
 
 /** An agent (subagent) the main loop spawned, from its agent.spawn to its turn.complete. Epoch ms. */
 export type Agent = {
@@ -58,8 +63,12 @@ declare module 'claude-code' {
   interface PluginState {
     'plain-view': {
       turn: Turn | null
-      /** The agent's task list; it outlives a turn until every task is done. */
+      /** The agent's task list; a task tool's outlives a turn until every task is done. */
       items: Item[]
+      /** An open checklist from the text the last request left: not drawn, counts no call, wakes when an answer writes one of its tasks. */
+      dormant: Item[]
+      /** The card shows the whole request (its `ver pedido` button); the next request folds it again. */
+      unfolded: boolean
       /** Moves while the agent works, so the bars' shine redraws. */
       tick: number
       /** Texts of steps that went on to call tools, normalized: the blocks `agentText: final` hides. */

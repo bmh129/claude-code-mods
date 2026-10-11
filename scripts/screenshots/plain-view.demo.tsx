@@ -31,6 +31,11 @@ const scenario = (name: string, run: (s: any) => Promise<void>) =>
         console.log(`FRAME ${name}|${caption}|${JSON.stringify(await ui.drawn())}`)
         await ui.unmount()
       },
+      press: async (key: string) => {
+        const ui = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'AbovePrompt', props: { bodyColumns: 100, hasSurvey: false, isWorking: true, maxRows: 20 }, viewport: { columns: 100, rows: 40 } } as never)
+        await ui.press({ key })
+        await ui.unmount()
+      },
       ask: (text: string) => $.turn.start({ text, turnId: 't1' } as never),
       end: (reason: string, ms: number) => $.turn.complete({ answer: 'ok', durationMs: ms, isAborted: reason === 'aborted', turnId: 't1', reason } as never),
       step: async () => { for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 3 } as never)) { /* drain */ } },
@@ -110,4 +115,21 @@ scenario('agents', async s => {
   await s.end('answer', 30_000)
   s.at(95_000)
   await s.frame('The turn ends, the agent still runs: the card waits for it')
+})
+
+scenario('request', async s => {
+  await s.ask('1. yes\n2. yes, on the same branch\n3. the default stays line\n\nShip it all in one fix version and open a single PR')
+  await s.call('Read', { file_path: '/repo/notes/plan.md' })
+  s.at(4_000)
+  await s.frame('A request of several lines: its first line and how many are left')
+  await s.press('request')
+  s.at(2_000)
+  await s.frame('show request unfolds it on the card')
+  await s.call('Bash', { command: 'git switch -c fix/plain-view-0.1.8', description: 'Create the fix branch' })
+  s.at(9_000)
+  await s.press('request')
+  await s.frame('fold puts it back on one line')
+  s.at(6_000)
+  await s.end('answer', 21_000)
+  await s.frame('The end card keeps the title and the count')
 })

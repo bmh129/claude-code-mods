@@ -2,9 +2,9 @@ import { expect, test } from 'claude-code/testing'
 
 import { awayFromDefaults, KEYS, rowKey, SETTINGS, settingsOf, tabOf, TABS } from '../hooks/settings'
 
-test('the three tabs hold each of the seven options once', () => {
+test('the three tabs hold each of the eight options once', () => {
   expect(TABS.flat().sort()).toEqual([...KEYS].sort())
-  expect(KEYS).toHaveLength(7)
+  expect(KEYS).toHaveLength(8)
 })
 
 test('the defaults are the manifest\'s', () => {
@@ -12,6 +12,7 @@ test('the defaults are the manifest\'s', () => {
     enabled: false,
     agentText: 'final',
     askForTasks: true,
+    request: 'line',
     palette: 'claude',
     animation: true,
     language: 'auto',
