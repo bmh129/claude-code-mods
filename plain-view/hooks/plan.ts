@@ -32,16 +32,30 @@ type Input = Readonly<Record<string, unknown>>
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 const isStatus = (s: unknown): s is Item['status'] => s === 'pending' || s === 'in_progress' || s === 'completed'
 
-/** A harness notification's first line, such as `<task-notification>`: an XML-like tag. */
-const NOTICE = /^<[a-zA-Z][\w-]*[\s>]/
+/** A harness notification's opening tag, such as `<task-notification>`: an XML-like tag. */
+const NOTICE = /^<([a-zA-Z][\w-]*)[\s>]/
 
 const firstLine = (text: string) => text.split('\n').map(l => l.trim()).find(l => l !== '') ?? ''
 
-/** Whether a turn's text is a harness notification (a background agent finished), not a request. */
-const isNotice = (text: string) => NOTICE.test(firstLine(text))
+/**
+ * The turn's text without the harness notifications it starts with: each one up to its closing
+ * tag, or its line when it has none. A request sent with a notification follows them.
+ */
+const requestOf = (text: string) => {
+  let rest = text.trimStart()
+  for (let m = NOTICE.exec(rest); m; m = NOTICE.exec(rest)) {
+    const close = rest.indexOf(`</${m[1]}>`)
+    const end = rest.indexOf('\n')
+    rest = (close >= 0 ? rest.slice(close + m[1]!.length + 3) : end >= 0 ? rest.slice(end + 1) : '').trimStart()
+  }
+  return rest
+}
 
-/** The request's first line, for the card's title; none when the turn starts from a notification. */
-export const titleOf = (text: string) => (isNotice(text) ? '' : firstLine(text))
+/** Whether a turn's text is only a harness notification (a background agent finished), with no request. */
+const isNotice = (text: string) => NOTICE.test(text.trimStart()) && requestOf(text) === ''
+
+/** The request's first line, for the card's title; none when the turn holds only a notification. */
+export const titleOf = (text: string) => firstLine(requestOf(text))
 
 /** A new turn: a fresh card, and the task list kept only while some task is still open. */
 export const startTurn = (prev: Turn | null, items: Item[], text: string, now: number, lang: Lang): { turn: Turn; items: Item[] } => {
@@ -147,11 +161,24 @@ export const checklistOf = (text: string): Item[] | null => {
   return items.length >= 2 ? items : null
 }
 
-/** The list after an answer of the agent: its last checklist, unless a task tool keeps the list. */
+/** Whether two task subjects name the same task: equal once markdown, spaces and case are gone. */
+const sameTask = (a: string, b: string) => normalize(a).toLowerCase() === normalize(b).toLowerCase()
+
+/**
+ * The list after an answer of the agent, unless a task tool keeps the list. A checklist shorter
+ * than the list that names some of its tasks ticks them off and keeps the rest (the agent listed
+ * what it just did); a checklist as long or longer, or one that shares no task, is the list now.
+ */
 export const applyAnswer = (items: Item[], answer: string): Item[] => {
   if (items.some(i => !i.fromText)) return items
   const list = checklistOf(answer)
-  return list ? keepCalls(items, list) : items
+  if (!list) return items
+  const isPart = list.length < items.length && list.some(n => items.some(o => sameTask(o.subject, n.subject)))
+  if (!isPart) return keepCalls(items, list)
+  return items.map(o => {
+    const n = list.find(x => sameTask(x.subject, o.subject))
+    return n ? { ...o, status: n.status } : o
+  })
 }
 
 /** The task list after a task tool's call: TaskCreate adds (with the id its result gave), TaskUpdate changes, TodoWrite replaces. */
@@ -207,7 +234,78 @@ export const doingOf = (tool: string, input: Input, lang: Lang): string => {
 
 const KNOWN = ['Bash', 'Read', 'Write', 'Edit', 'MultiEdit', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'Agent']
 
-/** The turn after a tool call on the main loop: what it is doing, and the file it changed or read. */
+/** A shell word with its quotes gone; `''` stays an empty word. */
+const unquote = (w: string) => (/^(["']).*\1$/s.test(w) ? w.slice(1, -1) : w)
+
+/** The command's lines without the bodies of its heredocs (`<<EOF` ... `EOF`): those are data, not commands. */
+const withoutHeredocs = (command: string) => {
+  const kept: string[] = []
+  let until: string | undefined
+  for (const line of command.split('\n')) {
+    if (until !== undefined) {
+      if (line.trim() === until) until = undefined
+      continue
+    }
+    kept.push(line)
+    until = /(?<!<)<<-?(?!<)\s*["']?(\w+)["']?/.exec(line)?.[1]
+  }
+  return kept.join('\n')
+}
+
+/** A path the command names for sure: not a device, a variable, a glob or a substitution. */
+const isPath = (w: string) => w !== '' && !w.startsWith('-') && !w.startsWith('/dev/') && !/[$`*?{}()<>|;&]/.test(w)
+
+/** The files one simple command writes in place: `sed -i`, `perl -i` / `-pi`, `tee`. */
+const inPlace = (words: string[]): string[] => {
+  while (words[0] === 'sudo' || words[0] === 'command' || /^\w+=/.test(words[0] ?? '')) words = words.slice(1)
+  const name = (words[0] ?? '').split('/').pop()
+  const args = words.slice(1)
+  if (name === 'tee') return args.filter(isPath)
+  if (name !== 'sed' && name !== 'gsed' && name !== 'perl') return []
+  const flag = name === 'perl' ? /^-[a-zA-Z]*i/ : /^(?:-[a-zA-Z]*i|--in-place)/
+  if (!args.some(a => flag.test(a))) return []
+  // The script comes with -e (or -f), else it is the first word that is not an option.
+  const takesNext = (a: string) => (name === 'perl' ? /^-[a-zA-Z]*[eE]$/.test(a) : a === '-e' || a === '-f' || a === '--expression' || a === '--file')
+  const plain: string[] = []
+  let hasScript = false
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!
+    if (takesNext(a)) {
+      hasScript = true
+      i++
+    } else if (name !== 'perl' && a === '-i' && args[i + 1] === '') i++ // BSD sed: -i '' (no backup)
+    else if (!a.startsWith('-')) plain.push(a)
+  }
+  return (hasScript ? plain : plain.slice(1)).filter(isPath)
+}
+
+/**
+ * The files a shell command writes, read from its text without running it: in-place edits
+ * (`sed -i`, `perl -pi`, `tee`) and output redirects (`> file`, `>> file`). Not `python -c` or a
+ * script: what those write cannot be read from the command.
+ */
+export const shellWrites = (command: string): string[] => {
+  // Quoted strings step aside first, so a `;`, `|` or `>` inside one splits or redirects nothing.
+  const quoted: string[] = []
+  const masked = withoutHeredocs(command).replace(/"[^"]*"|'[^']*'/g, q => `\0${quoted.push(q) - 1}\0`)
+  const word = (w: string) => unquote(w.replace(/\0(\d+)\0/g, (_, i: string) => quoted[Number(i)]!))
+  const files: string[] = []
+  for (const part of masked.split(/&&|\|\||[;|\n]/)) {
+    files.push(...inPlace((part.match(/\S+/g) ?? []).map(word)))
+    // Redirects of the output: `> f`, `>> f`, `1> f`, `&> f`; not `2> f` or `>&2`.
+    for (const m of part.matchAll(/(?:^|[^\d&<>])(?:1|&)?>>?(?!&)\s*([^\s;&|<>]+)/g)) {
+      const target = word(m[1]!)
+      if (isPath(target)) files.push(target)
+    }
+  }
+  return [...new Set(files)]
+}
+
+/** The list with one more file, unless it names it already, as a full or a relative path. */
+const withFile = (list: readonly string[], file: string) =>
+  list.some(f => f === file || f.endsWith(`/${file}`) || file.endsWith(`/${f}`)) ? [...list] : [...list, file]
+
+/** The turn after a tool call on the main loop: what it is doing, and the files it changed or read. */
 export const touch = (turn: Turn, tool: string, input: Input, lang: Lang, ok: boolean | null): Turn => {
   const file = str(input.file_path) || str(input.notebook_path)
   const next: Turn = { ...turn }
@@ -216,10 +314,10 @@ export const touch = (turn: Turn, tool: string, input: Input, lang: Lang, ok: bo
     next.doing = doingOf(tool, input, lang)
     return next
   }
-  if (ok && file) {
-    if (CHANGES.includes(tool) && !turn.changed.includes(file)) next.changed = [...turn.changed, file]
-    if (tool === 'Read' && !turn.read.includes(file)) next.read = [...turn.read, file]
-  }
+  if (!ok) return next
+  if (tool === 'Bash') next.changed = shellWrites(str(input.command)).reduce(withFile, turn.changed)
+  if (file && CHANGES.includes(tool)) next.changed = withFile(turn.changed, file)
+  if (file && tool === 'Read') next.read = withFile(turn.read, file)
   return next
 }
 
