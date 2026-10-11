@@ -25,7 +25,7 @@
     "request": {
       "type": "string",
       "title": "Request on the card",
-      "description": "How much of a request of several lines the card's title shows. line: the first line and how many are left (+5 lines). joined: all lines in one, cut at the card's width. auto: the first line of prose, so list items (1. yes) go into the count. all: every line. A pasted code block shows as one line that counts its lines. The card's show request button unfolds the whole request",
+      "description": "How much of a request of several lines the card's title shows. line: the first line and how many are left (+5 lines). joined: all lines in one, cut at the card's width. auto: the first line of prose, so list items (1. yes) go into the count. all: up to 10 lines under the title. A pasted code block shows as one line that counts its lines. The card's show request button unfolds the whole request",
       "options": [
         "line",
         "joined",

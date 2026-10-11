@@ -36,7 +36,7 @@ test('snap', { options: { enabled: true, language: 'en', icons: 'symbol' } }, as
   now += 96_000
   await $.turn.complete({ answer: 'ok', durationMs: 107_000, isAborted: false, turnId: 't1', reason: 'answer' } as never)
   await band()
-  // A request of several lines: its first line, `+3 lines` and the button that unfolds it.
+  // A request of several lines: its first line, `+2 lines` and the button that unfolds it.
   await $.turn.start({ text: '1. yes\n2. yes, on the same branch\n\nShip it all in one fix version and open a single PR', turnId: 't3' } as never)
   now += 4_000
   await $.tool.call({ tool: 'Read', file_path: '/repo/notes/plan.md' } as never)

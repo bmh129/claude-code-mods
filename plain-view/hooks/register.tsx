@@ -65,6 +65,7 @@ import {
   spawnAgent,
   startTurn,
   TASK_TOOLS,
+  titleOf,
   touch,
   wake,
 } from './plan'
@@ -380,9 +381,10 @@ export const register: Register = (on, options) => {
     const now = await $.clock.now()
     const fresh = startTurn(await read($, turn), await read($, items), e.text, now, lang)
     await update($, items, () => fresh.items)
-    await update($, dormant, () => fresh.dormant)
+    await update($, dormant, () => fresh.dormant).catch(() => undefined)
     await update($, turn, () => fresh.turn)
-    await update($, unfolded, () => false)
+    // A new request opens folded; a notification or a continuation keeps it as it was.
+    if (titleOf(e.text)) await update($, unfolded, () => false).catch(() => undefined)
     // A new request keeps the agents still running; a notification keeps the finished ones too.
     await update($, agents, list => keepAgents(list, e.text))
     if (isOn) startTicking($, runningOf(await read($, agents)).length > 0)
@@ -414,6 +416,8 @@ export const register: Register = (on, options) => {
   on('turn.step', async function* ($, e, next) {
     if (e.agentId) return yield* next(e)
     const stream = next(e)
+    // A stream the engine closes early rejects its result; nothing here waits on it then.
+    stream.result.catch(() => undefined)
     const texts: string[] = []
     let isRead = false
     for await (const chunk of stream) {
@@ -474,11 +478,7 @@ export const register: Register = (on, options) => {
     const now = await $.clock.now()
     const id = e.agentId
     if (id) await update($, agents, list => finishAgent(list, id, now))
-    else {
-      await update($, turn, v => (v && v.end === undefined && !v.isDemo ? endTurn(v, e.reason, now, e.answer) : v))
-      // A sleeping checklist the turn never wrote again is dropped.
-      await update($, dormant, () => [])
-    }
+    else await update($, turn, v => (v && v.end === undefined && !v.isDemo ? endTurn(v, e.reason, now, e.answer) : v))
     await settle($)
     return result
   })

@@ -54,8 +54,8 @@ Five short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
 - **The card**, above the prompt:
   - the request's first line, and the time since it was sent. A request of several lines adds
     `+5 lines` and a `show request` button that unfolds it on the card until the next request;
-    the `request` option shows the lines joined, from the first line of prose (`auto`), or all
-    of them. A pasted code block shows as one line, `⟨code · 4 lines⟩`;
+    the `request` option shows the lines joined, from the first line of prose (`auto`), or up
+    to 10 of them (`all`). A pasted code block shows as one line, `⟨code · 4 lines⟩`;
   - `Step 2 of 4` with a bar for the whole request and its percentage;
   - one row per task of the agent's list (`TaskCreate`/`TaskUpdate` or `TodoWrite`) with its
     own bar: `Done`, `~40%` on the current step and what it is doing (`reading weather.ts`, a
@@ -152,7 +152,7 @@ Set them in `/config`, or under `pluginConfigs` in `settings.json`.
 | Option | Default | What it does |
 | --- | --- | --- |
 | `enabled` | `false` | Hide the tool rows that worked and show the card |
-| `request` | `line` | How much of a request of several lines the card's title shows: `line` (the first line and `+5 lines`), `joined` (all lines in one, cut at the card's width), `auto` (the first line of prose; list items such as `1. yes` go into the count), `all` (every line). The card's `show request` button unfolds the whole request |
+| `request` | `line` | How much of a request of several lines the card's title shows: `line` (the first line and `+5 lines`), `joined` (all lines in one, cut at the card's width), `auto` (the first line of prose; list items such as `1. yes` go into the count), `all` (up to 10 lines under the title, then `+N lines`). The card's `show request` button unfolds the request, 10 lines at most |
 | `palette` | `claude` | The bar colors: `claude`, `clean`, `sunset`, `aurora`, `ocean`, `neon`, `forest`, `calm` |
 | `animation` | `true` | The shine on the bars and the gradient. Off: still bars in theme colors |
 | `agentText` | `final` | What stays of the agent's messages: `final` (the final answer), `none`, `card` (the answer's first sentence in the end card), `all` |

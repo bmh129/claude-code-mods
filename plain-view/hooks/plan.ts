@@ -57,28 +57,26 @@ const isNotice = (text: string) => NOTICE.test(text.trimStart()) && requestOf(te
 /** The request's first line, for the card's title; none when the turn holds only a notification. */
 export const titleOf = (text: string) => firstLine(requestOf(text))
 
-/** A fenced code block's opening or closing line: ``` or ~~~. */
-const FENCED = /^ {0,3}(`{3,}|~{3,})/
-
 /**
  * The request's lines for the card: the turn's text past its notifications, each non-blank line
- * trimmed, and a fenced code block as one line that counts its lines (`{ code: 4 }`).
+ * trimmed, and a fenced code block as one line that counts its lines (`{ code: 4 }`). Fences
+ * open and close as in checklistOf (fenceOf, closes).
  */
 export const requestLinesOf = (text: string): RequestLine[] => {
   const lines: RequestLine[] = []
-  let fence: string | undefined
+  let fence: Fence | null = null
   let code = 0
   for (const raw of requestOf(text).split('\n')) {
-    const m = FENCED.exec(raw)
-    if (fence !== undefined) {
-      if (m && m[1]![0] === fence[0] && m[1]!.length >= fence.length && raw.trim() === m[1]) {
+    if (fence) {
+      if (closes(raw, fence)) {
         lines.push({ code })
-        fence = undefined
+        fence = null
       } else code++
       continue
     }
-    if (m) {
-      fence = m[1]!
+    const opened = indentOf(raw) <= 3 ? fenceOf(raw, false) : null
+    if (opened) {
+      fence = opened
       code = 0
       continue
     }
@@ -86,7 +84,7 @@ export const requestLinesOf = (text: string): RequestLine[] => {
     if (line) lines.push(line)
   }
   // A fence left open still counts what it held.
-  if (fence !== undefined) lines.push({ code })
+  if (fence) lines.push({ code })
   return lines
 }
 
@@ -96,16 +94,16 @@ export const requestLinesOf = (text: string): RequestLine[] => {
  * no call, and wakes only when an answer writes one of its tasks again (wake).
  */
 export const startTurn = (prev: Turn | null, items: Item[], text: string, now: number, lang: Lang): { turn: Turn; items: Item[]; dormant: Item[] } => {
-  // A notification keeps the last request's title, or says an agent finished.
+  // A notification, or a continuation with no text, keeps the last request's title and lines.
+  const isRequest = titleOf(text) !== ''
   const title = titleOf(text) || prev?.title || (isNotice(text) ? WORDS[lang].agentDone : WORDS[lang].untitled)
-  // A notification keeps the last request's lines with its title.
-  const lines = titleOf(text) ? requestLinesOf(text) : (prev?.lines ?? [])
+  const lines = isRequest ? requestLinesOf(text) : (prev?.lines ?? [])
   // A demo's sample list never carries into a real request.
   const open = !prev?.isDemo && items.some(i => i.status !== 'completed')
-  // A notification goes on with the request before it, so its checklist stays awake.
-  const isAsleep = open && !isNotice(text) && items.some(i => i.fromText)
+  // A notification or a continuation goes on with the request before it: its checklist stays awake.
+  const isAsleep = open && isRequest && items.some(i => i.fromText)
   return {
-    turn: { title, startedAt: now, calls: 0, changed: [], read: [], ...(lines.length > 1 ? { lines } : {}) },
+    turn: { title, startedAt: now, calls: 0, changed: [], read: [], ...(lines.length > 1 || lines.some(l => typeof l !== 'string') ? { lines } : {}) },
     items: open && !isAsleep ? items : [],
     dormant: isAsleep ? items : [],
   }
@@ -525,8 +523,14 @@ export type RequestMode = 'line' | 'joined' | 'auto' | 'all'
 /** The `request` option; `line` when it names none. */
 export const requestModeOf = (option: unknown): RequestMode => (option === 'joined' || option === 'auto' || option === 'all' ? option : 'line')
 
-/** The request's lines under the card's title: the rows shown, the lines left out, and whether the button folds them. */
-export type RequestView = { rest: string[]; more: number; isOpen: boolean; isJoined: boolean }
+/** The most request lines the card draws under its title (`all`, or unfolded); the rest is `+N linhas`. */
+export const REQUEST_ROWS = 10
+
+/**
+ * The request's lines under the card's title: the rows shown, the lines left out, whether it is
+ * unfolded, whether the button would show more (`joined` asks the card: only when the line is cut).
+ */
+export type RequestView = { rest: string[]; more: number; isOpen: boolean; isJoined: boolean; canOpen: boolean }
 
 /** A line as the card draws it: a code block as `⟨código · 4 linhas⟩`. */
 const lineText = (line: RequestLine, lang: Lang) => (typeof line === 'string' ? line : WORDS[lang].codeLines(line.code))
@@ -540,18 +544,23 @@ const isSentence = (line: RequestLine, isProse: boolean) =>
 /**
  * The card's title and the request's lines under it, as `request` says: `line` the first line and
  * a count of the rest; `auto` the first line of prose (a list item only when there is none) and a count; `joined` all of
- * them in one line; `all` every line. Unfolded (the card's button), every line.
+ * them in one line; `all` every line. Unfolded (the card's button), every line. Under the title,
+ * REQUEST_ROWS lines at most.
  */
 export const requestViewOf = (turn: Turn, mode: RequestMode, isOpen: boolean, lang: Lang): { title: string; request?: RequestView } => {
   const lines = (turn.lines ?? []).map(l => lineText(l, lang))
-  if (lines.length < 2) return { title: turn.title }
-  if (isOpen || mode === 'all') return { title: lines[0]!, request: { rest: lines.slice(1), more: 0, isOpen, isJoined: false } }
-  if (mode === 'joined') return { title: lines.join(' · '), request: { rest: [], more: 0, isOpen, isJoined: true } }
+  if (lines.length === 0) return { title: turn.title }
+  if (lines.length === 1) return { title: lines[0]! }
+  if (isOpen || mode === 'all') {
+    const rest = lines.slice(1, 1 + REQUEST_ROWS)
+    return { title: lines[0]!, request: { rest, more: lines.length - 1 - rest.length, isOpen, isJoined: false, canOpen: isOpen } }
+  }
+  if (mode === 'joined') return { title: lines.join(' · '), request: { rest: [], more: 0, isOpen, isJoined: true, canOpen: false } }
   // auto: the first line of prose, else the first list item that reads as a sentence, else the first line.
   const all = turn.lines ?? []
   const prose = all.findIndex(l => isSentence(l, true))
   const at = mode === 'auto' ? Math.max(0, prose >= 0 ? prose : all.findIndex(l => isSentence(l, false))) : 0
-  return { title: lines[at]!, request: { rest: [], more: lines.length - 1, isOpen, isJoined: false } }
+  return { title: lines[at]!, request: { rest: [], more: lines.length - 1, isOpen, isJoined: false, canOpen: true } }
 }
 
 /** The rows a long plan shows: WINDOW of them around the current one. */

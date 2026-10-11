@@ -105,6 +105,9 @@ export type DrawOptions = {
   onRequest?: () => void
 }
 
+/** The fewest columns the request's title keeps before its count and button step aside. */
+const MIN_TITLE = 12
+
 /** The plan card: a bordered box above the prompt, as the approved prototype draws it. */
 export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
   const { Box, Text, Raster, Button } = ui
@@ -165,11 +168,14 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
   const request: RequestView | undefined = card.request
   const words = o.request
   const titled = (text: string, room: number, pal: 'work' | 'ok' | 'off', badge?: { text: string; state: 'done' | 'stopped' }) => {
-    const more = request && request.more > 0 && words ? `  ${words.more(request.more)}` : ''
     const label = (request?.isOpen ? words?.fold : words?.show) ?? ''
     const onRequest = o.onRequest
-    const hasButton =
-      request !== undefined && words !== undefined && onRequest !== undefined && Button !== undefined && (request.more > 0 || request.isOpen || (request.isJoined && text.length > room - more.length))
+    // A narrow card keeps the title: the button goes first, then the count.
+    let more = request && request.more > 0 && words ? `  ${words.more(request.more)}` : ''
+    let hasButton =
+      request !== undefined && words !== undefined && onRequest !== undefined && Button !== undefined && (request.canOpen || (request.isJoined && text.length > room - more.length))
+    if (hasButton && room - more.length - label.length - 6 < MIN_TITLE) hasButton = false
+    if (room - more.length < MIN_TITLE) more = ''
     return (
       <Box flexDirection="row">
         <Text>
@@ -179,7 +185,7 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
           {more ? <Text dimColor>{more}</Text> : null}
         </Text>
         {hasButton ? <Text>  </Text> : null}
-        {hasButton ? <Button key="request" plain dimColor label={label} onPress={() => onRequest()} /> : null}
+        {hasButton && onRequest ? <Button key="request" plain dimColor label={label} onPress={() => onRequest()} /> : null}
       </Box>
     )
   }

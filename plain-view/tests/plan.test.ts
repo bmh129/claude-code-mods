@@ -31,6 +31,7 @@ import {
   requestLinesOf,
   requestModeOf,
   requestViewOf,
+  REQUEST_ROWS,
   touch,
   wake,
   windowAround,
@@ -723,14 +724,14 @@ test('the request option: line, joined, auto and all; open shows every line; one
   expect(requestModeOf(undefined)).toBe('line')
   expect(requestModeOf('3')).toBe('line')
   expect(requestModeOf('auto')).toBe('auto')
-  expect(requestViewOf(t, 'line', false, 'pt-BR')).toEqual({ title: '1. sim', request: { rest: [], more: 4, isOpen: false, isJoined: false } })
+  expect(requestViewOf(t, 'line', false, 'pt-BR')).toEqual({ title: '1. sim', request: { rest: [], more: 4, isOpen: false, isJoined: false, canOpen: true } })
   expect(requestViewOf(t, 'auto', false, 'pt-BR').title).toBe('tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só')
   expect(requestViewOf(t, 'auto', false, 'pt-BR').request?.more).toBe(4)
   const joined = requestViewOf(t, 'joined', false, 'pt-BR')
   expect(joined.title).toBe('1. sim · 2. sim§. sim · 4. sim · 5. "Fala e pensamento do agent" · tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só')
-  expect(joined.request).toEqual({ rest: [], more: 0, isOpen: false, isJoined: true })
-  expect(requestViewOf(t, 'all', false, 'pt-BR')).toEqual({ title: '1. sim', request: { rest: ['2. sim§. sim', '4. sim', '5. "Fala e pensamento do agent"', 'tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só'], more: 0, isOpen: false, isJoined: false } })
-  expect(requestViewOf(t, 'joined', true, 'pt-BR').request).toEqual({ rest: expect.any(Array), more: 0, isOpen: true, isJoined: false })
+  expect(joined.request).toEqual({ rest: [], more: 0, isOpen: false, isJoined: true, canOpen: false })
+  expect(requestViewOf(t, 'all', false, 'pt-BR')).toEqual({ title: '1. sim', request: { rest: ['2. sim§. sim', '4. sim', '5. "Fala e pensamento do agent"', 'tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só'], more: 0, isOpen: false, isJoined: false, canOpen: false } })
+  expect(requestViewOf(t, 'joined', true, 'pt-BR').request).toEqual({ rest: expect.any(Array), more: 0, isOpen: true, isJoined: false, canOpen: true })
   // auto with no prose: the first list item that reads as a sentence, else the first line.
   expect(requestViewOf(turnOf('1. sim\n2. corrija o teste agora'), 'auto', false, 'pt-BR').title).toBe('2. corrija o teste agora')
   expect(requestViewOf(turnOf('1. sim\n2. não'), 'auto', false, 'pt-BR').title).toBe('1. sim')
@@ -751,4 +752,38 @@ test('every card carries the request view: plan, phrase, waiting and summary', (
   expect(cardOf({ ...t, calls: 1, end: 'answer', endedAt: 900 }, [], 1000, 'pt-BR', false, [], view)).toMatchObject({ kind: 'summary', request: { more: 4 } })
   expect(cardOf({ ...t, end: 'answer', endedAt: 900 }, [], 1000, 'pt-BR', false, [{ id: 'a', label: 'x', startedAt: 0 }], view)).toMatchObject({ kind: 'waiting', request: { more: 4 } })
   expect(cardOf(turnOf('Uma linha'), [], 1000, 'pt-BR', false, [], view)).not.toHaveProperty('request')
+})
+
+test('review: a ``` line with a backtick after it is inline code, not a fence', () => {
+  expect(requestLinesOf('```npm test``` falha\nconserte o teste')).toEqual(['```npm test``` falha', 'conserte o teste'])
+  expect(requestLinesOf('Veja:\n    ```\nnão é fence')).toEqual(['Veja:', '```', 'não é fence'])
+})
+
+test('review: a request that is only a code block titles the card with its count', () => {
+  const t = turnOf('```python\nprint(1)\nprint(2)\n```')
+  expect(t.lines).toEqual([{ code: 2 }])
+  expect(requestViewOf(t, 'line', false, 'pt-BR')).toEqual({ title: '⟨código · 2 linhas⟩' })
+})
+
+test('review: all and unfolded draw REQUEST_ROWS lines at most, and count the rest', () => {
+  const t = turnOf(Array.from({ length: 25 }, (_, i) => `linha ${i + 1}`).join('\n'))
+  const all = requestViewOf(t, 'all', false, 'pt-BR').request!
+  expect(all.rest).toHaveLength(REQUEST_ROWS)
+  expect(all.more).toBe(24 - REQUEST_ROWS)
+  expect(all.canOpen).toBe(false)
+  const open = requestViewOf(t, 'line', true, 'pt-BR').request!
+  expect(open.rest).toHaveLength(REQUEST_ROWS)
+  expect(open.canOpen).toBe(true)
+})
+
+test('review: a continuation (no text) keeps the request, its lines and its open checklist awake', () => {
+  const items = [{ subject: 'A', status: 'completed', calls: 2, fromText: true }, { subject: 'B', status: 'pending', calls: 0, fromText: true }] as Item[]
+  const t = turnOf(SCREENSHOT)
+  const next = startTurn(t, items, '', 5, 'pt-BR')
+  expect(next.turn.title).toBe('1. sim')
+  expect(next.turn.lines).toEqual(t.lines)
+  expect(next.items).toEqual(items)
+  expect(next.dormant).toEqual([])
+  // A typed request still puts it to sleep.
+  expect(startTurn(t, items, 'Outra coisa', 5, 'pt-BR').dormant).toEqual(items)
 })

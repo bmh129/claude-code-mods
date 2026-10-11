@@ -1173,12 +1173,35 @@ test('a request of several lines: the first line, +N linhas and ver pedido, whic
   expect(drawn).toContain('tudo sobe na mesma branch')
   expect(drawn).toContain('"label":"recolher"')
   expect(drawn).not.toContain('+2 linhas')
+  // A notification keeps it unfolded.
+  await ask($, '<task-notification>agent done</task-notification>')
+  expect(show(await ui.drawn())).toContain('"label":"recolher"')
   await ui.unmount()
-  // The next request folds it again; a request of one line has no count and no button.
+  // The next request of several lines opens folded; one of one line has no count and no button.
+  await ask($, 'Outro pedido\ncom duas linhas')
+  drawn = await card($)
+  expect(drawn).toContain('+1 linha')
+  expect(drawn).toContain('"label":"ver pedido"')
+  expect(drawn).not.toContain('recolher')
   await ask($, 'Adicione um comentário no topo do index.html')
   drawn = await card($)
   expect(drawn).not.toContain('linhas')
   expect(drawn).not.toContain('ver pedido')
+})
+
+test('review: a narrow card keeps the title; the button steps aside first, then the count', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($, 'Corrija o teste de login\nlinha dois\nlinha três')
+  const wide = await card($, 'terminal', 100)
+  expect(wide).toContain('+2 linhas')
+  expect(wide).toContain('ver pedido')
+  const mid = await card($, 'terminal', 44)
+  expect(mid).toContain('+2 linhas')
+  expect(mid).not.toContain('ver pedido')
+  const narrow = await card($, 'terminal', 30)
+  expect(narrow).not.toContain('+2 linhas')
+  expect(narrow).toContain('Corrija')
 })
 
 test('request auto: the first line of prose leads the card, on the end card too', { options: { ...ON.options, request: 'auto' } }, async ($, on) => {
