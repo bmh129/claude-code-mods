@@ -204,6 +204,24 @@ tema. `animation: off` deixa as barras paradas, nas cores do próprio tema.
 
 ![plain-view: o cartão enquanto o agente trabalha, no fim do turno, esperando um agente, e as paletas](screenshots/plain-view.svg)
 
+Quatro cenários curtos, cada um desenhado pelo próprio mod:
+
+**Uma lista de tarefas** ([mp4](screenshots/plain-view-tasks.mp4))
+
+![plain-view: a task list](screenshots/plain-view-tasks.gif)
+
+**Sem ferramenta de tarefas: um checklist na resposta** ([mp4](screenshots/plain-view-checklist.mp4))
+
+![plain-view: no task tool: a checklist in the answer](screenshots/plain-view-checklist.gif)
+
+**Esc interrompe o turno** ([mp4](screenshots/plain-view-interrupted.mp4))
+
+![plain-view: esc interrupts the turn](screenshots/plain-view-interrupted.gif)
+
+**Um agente em segundo plano** ([mp4](screenshots/plain-view-agents.mp4))
+
+![plain-view: a background agent](screenshots/plain-view-agents.gif)
+
 #### Instalação
 
 ```

@@ -6,6 +6,24 @@ turn ends.
 
 ![plain-view: the card while the agent works, when the turn ends, waiting for an agent, and the palettes](../screenshots/plain-view.svg)
 
+Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-view-demos.sh`):
+
+**A task list** ([mp4](../screenshots/plain-view-tasks.mp4))
+
+![plain-view: a task list](../screenshots/plain-view-tasks.gif)
+
+**No task tool: a checklist in the answer** ([mp4](../screenshots/plain-view-checklist.mp4))
+
+![plain-view: no task tool: a checklist in the answer](../screenshots/plain-view-checklist.gif)
+
+**Esc interrupts the turn** ([mp4](../screenshots/plain-view-interrupted.mp4))
+
+![plain-view: esc interrupts the turn](../screenshots/plain-view-interrupted.gif)
+
+**A background agent** ([mp4](../screenshots/plain-view-agents.mp4))
+
+![plain-view: a background agent](../screenshots/plain-view-agents.gif)
+
 - **Off until you turn it on:** `/plain-view on`, the `enabled` option in `/config`, or the
   switch in launchpad's panel (`◆ pad`). The hint line under the prompt ends in `plain view`
   while it is on.
@@ -33,7 +51,9 @@ turn ends.
     `Next`, `Up next`. A list longer than 6 shows the 5 tasks around the current one, with a
     count of the rest;
   - with no task tool, the last checklist the agent writes in its answer (`1. [ ] Read the API`,
-    `- [x] Build the page`) is the list;
+    `- [x] Build the page`) is the list. A shorter checklist that names some of its tasks (the
+    two steps it just finished) ticks them off and keeps the rest; one that shares no task is a
+    new plan;
   - before the agent writes a list: `Understand your request` and `Plan the steps`; with no
     list at all, the tool in flight;
   - the agents (subagents) the main turn starts, in one row: `◇ 1 agent running · code-review ·
@@ -56,7 +76,9 @@ turn ends.
   the steps already done (4 calls before any), and stops at 95% until the task is marked done.
   It is a guess, hence the `~`. The request's bar counts done steps plus that estimate.
 - **When the turn ends:** the card turns green, `✓ All done`, `took 1m 47s`, 100%, and a line
-  with the files changed and read (`changed 2 files · read 3 files`). On Esc it turns grey,
+  with the files changed and read (`changed 2 files · read 3 files`). Changed counts edits made
+  with shell commands too, read from the command without running it (`sed -i`, `perl -pi`,
+  `tee`, `> file`); what a script or `python -c` writes is not counted. On Esc it turns grey,
   `■ Interrupted`, with the step it left. A turn with no task list that called tools or
   agents ends in a small card: `✓ Done`, the request, `took 7m 34s`, and a line with the files
   and the agents (`changed 6 files · read 3 files · 1 agent`); grey on Esc (`■ Interrupted`,

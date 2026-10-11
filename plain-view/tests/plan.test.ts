@@ -17,6 +17,7 @@ import {
   keepAgents,
   reconcileAgents,
   runningOf,
+  shellWrites,
   showsBlock,
   countCall,
   currentOf,
@@ -493,4 +494,77 @@ test('plain conversation leaves no card; agentText card puts the answer on the s
   const stopped = cardOf(endTurn(working(), 'aborted', NOW + MIN, 'x y z w.'), [], NOW + MIN, 'pt-BR', true)!
   if (stopped.kind !== 'summary') throw new Error('summary card expected')
   expect(stopped.answer).toBeUndefined()
+})
+
+// Issue #17: a notification and a request in the same turn, a partial checklist, edits made with shell commands.
+
+const NOTICE = '<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n<result>Done.\nChanged 3 files\n</result>\n</task-notification>'
+
+test('a request that comes after a notification titles the card, and drops the finished agents', () => {
+  const text = `${NOTICE}\n\nAdd a dark mode toggle to the coffee shop site.\nKeep the colors.`
+  expect(titleOf(text)).toBe('Add a dark mode toggle to the coffee shop site.')
+  expect(startTurn(null, [], text, NOW, 'en').turn.title).toBe('Add a dark mode toggle to the coffee shop site.')
+  expect(startTurn(fresh().turn, [], text, NOW, 'pt-BR').turn.title).toBe('Add a dark mode toggle to the coffee shop site.')
+  // Two notifications, one of them with no closing tag, then the request.
+  expect(titleOf(`<system-reminder foo="1">x\n${NOTICE}\nTroque o tema`)).toBe('Troque o tema')
+  // Only notifications: still an agent that finished.
+  expect(startTurn(null, [], `${NOTICE}\n${NOTICE}`, NOW, 'en').turn.title).toBe('An agent finished')
+  const team: Agent[] = [{ id: 'a1', label: 'old', startedAt: NOW, endedAt: NOW + 1 }, { id: 'a2', label: 'live', startedAt: NOW }]
+  expect(keepAgents(team, text).map(a => a.id)).toEqual(['a2'])
+  expect(keepAgents(team, NOTICE).map(a => a.id)).toEqual(['a1', 'a2'])
+})
+
+test('a shorter checklist that names some tasks ticks them off and keeps the whole list', () => {
+  const six = applyAnswer([], ['1. [ ] Add CSS variables for both themes', '2. [ ] Add a toggle button', '3. [ ] Save the choice', '4. [ ] Update index.html', '5. [ ] Update about.html', '6. [ ] Test both themes'].join('\n'))
+  const counted = countCall(countCall(six))
+  const after = applyAnswer(counted, 'Done so far:\n- [x] **Add CSS variables** for both themes\n- [x] add a toggle   button')
+  expect(after).toHaveLength(6)
+  expect(after.map(i => i.status)).toEqual(['completed', 'completed', 'pending', 'pending', 'pending', 'pending'])
+  expect(after[0]!.subject).toBe('Add CSS variables for both themes')
+  expect(after[0]!.calls).toBe(2)
+  const card = cardOf(fresh().turn, after, NOW + 80_000, 'en')!
+  expect(card.kind === 'plan' && card.label).toBe('Step 3 of 6')
+  // The full checklist again: the list, as written.
+  expect(applyAnswer(after, six.map((it, i) => `${i + 1}. [x] ${it.subject}`).join('\n')).every(i => i.status === 'completed')).toBe(true)
+  // A shorter checklist that shares no task is a new plan.
+  expect(applyAnswer(counted, '- [ ] Write the README\n- [ ] Open the PR').map(i => i.subject)).toEqual(['Write the README', 'Open the PR'])
+})
+
+test('shell commands that write files in place or through a redirect, read from the text', () => {
+  expect(shellWrites("perl -pi -e 's/light/dark/g' index.html about.html")).toEqual(['index.html', 'about.html'])
+  expect(shellWrites("sed -i '' 's/#fff/var(--bg)/' css/site.css")).toEqual(['css/site.css'])
+  expect(shellWrites("sed -i 's/a/b/' b.css && gsed --in-place -e 's/a/b/' -e 's/c/d/' c.css d.css")).toEqual(['b.css', 'c.css', 'd.css'])
+  expect(shellWrites('sed -i.bak -f fix.sed e.txt')).toEqual(['e.txt'])
+  expect(shellWrites('echo hi > out.txt; cat notes >> log.md')).toEqual(['out.txt', 'log.md'])
+  expect(shellWrites('npm test 2>&1 | tee -a report.txt')).toEqual(['report.txt'])
+  expect(shellWrites("cat > notes.md <<'EOF'\nx > y; a | b\nEOF")).toEqual(['notes.md'])
+  expect(shellWrites('echo ok &> all.log')).toEqual(['all.log'])
+})
+
+test('shell commands whose writes cannot be read from the text count no file', () => {
+  expect(shellWrites("python3 -c \"open('index.html','w').write(x)\"")).toEqual([])
+  expect(shellWrites("python3 - <<'EOF'\nif x > 3:\n    print(x)\nEOF")).toEqual([])
+  expect(shellWrites("sed 's/a/b/' f.txt; perl -e 'print 1' g.txt; grep -n x h.txt")).toEqual([])
+  expect(shellWrites('make 2> err.log >/dev/null; ls >&2')).toEqual([])
+  expect(shellWrites('echo "a > b; c | tee d"')).toEqual([])
+  expect(shellWrites('sed -i "s/x/y/" "$f" *.html; echo x > $OUT')).toEqual([])
+})
+
+test('the end card counts the files shell commands changed, once each', () => {
+  let t = fresh().turn
+  const call = (tool: string, input: Record<string, unknown>, ok = true) => {
+    t = touch(t, tool, input, 'en', null)
+    t = touch(t, tool, input, 'en', ok)
+  }
+  call('Edit', { file_path: '/repo/css/site.css', old_string: 'a', new_string: 'b' })
+  call('Write', { file_path: '/repo/js/theme.js', content: 'x' })
+  call('Read', { file_path: '/repo/index.html' })
+  call('Read', { file_path: '/repo/about.html' })
+  call('Bash', { command: "perl -pi -e 's/a/b/' index.html about.html", description: 'Add the toggle' })
+  call('Bash', { command: "sed -i '' 's/x/y/' css/site.css", description: 'Fix a color' })
+  call('Bash', { command: 'sed -i "s/a/b/" broken.html', description: 'Refused' }, false)
+  call('Bash', { command: 'git status', description: 'Check the tree' })
+  expect(t.changed).toEqual(['/repo/css/site.css', '/repo/js/theme.js', 'index.html', 'about.html'])
+  const card = cardOf(endTurn(t, 'answer', NOW + 450_000), [], NOW + 450_000, 'en')!
+  expect(card.kind === 'summary' && card.detail).toBe('changed 4 files · read 2 files')
 })
