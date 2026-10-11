@@ -2,6 +2,20 @@
 
 **English** | [Português (Brasil)](README.pt-BR.md)
 
+[![CI](https://github.com/ice-lfernandes/claude-code-mods/actions/workflows/ci.yml/badge.svg)](https://github.com/ice-lfernandes/claude-code-mods/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ice-lfernandes/claude-code-mods)](https://github.com/ice-lfernandes/claude-code-mods/releases/latest)
+[![requires Claude Code 2.1.287+](https://img.shields.io/badge/Claude%20Code-2.1.287%2B-d97757)](#install)
+[![License: MIT](https://img.shields.io/github/license/ice-lfernandes/claude-code-mods)](LICENSE)
+
+**Your plan limits, your context and what the agent is doing, right above the prompt.** Six
+mods for Claude Code, installed from one marketplace.
+
+![limits-meter: the band above the prompt through a request, the /limits pane, and the toast on a costly switch to opus](screenshots/limits-meter-demo.gif)
+
+limits-meter through a request, the `/limits` pane and a costly switch near the limit
+([mp4](screenshots/limits-meter-demo.mp4)). Drawn from the mod's real output by
+`scripts/screenshots/limits-meter-demo.sh`.
+
 Mods for everyday Claude Code UX. A mod is a Claude Code plugin made of function hooks: it can
 draw a band above the prompt, a pane, a status line entry or a toast. Requires Claude Code
 2.1.287 or later.

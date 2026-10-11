@@ -1,6 +1,8 @@
-"""Paints the frames plain-view.demo.tsx captured into GIFs and MP4s (Pillow + ffmpeg).
+"""Paints the frames a <mod>.demo.tsx captured into GIFs and MP4s (Pillow + ffmpeg).
 
-Usage: python3 demo.py <frames.txt> <output dir>   writes plain-view-<scenario>.gif and .mp4
+Usage: python3 demo.py <frames.txt> <output dir> [mod]   writes <mod>-<scenario>.gif and .mp4
+A frame is `FRAME <scenario>|<caption>|<tree>`, or `{"tree": <tree>, "prompt": <text>}` in place of
+the tree to show text typed in the prompt. The mod defaults to plain-view.
 """
 import json, os, shutil, subprocess, sys, tempfile
 from PIL import Image, ImageDraw, ImageFont
@@ -9,11 +11,18 @@ here = os.path.dirname(os.path.abspath(__file__))
 src = open(os.path.join(here, 'render.py')).read().split('# Usage:')[0]
 exec(compile(src, 'render.py', 'exec'))  # lines, trim, width, cells, COLORS and the palette
 
-S, COLS, HOLD = 2, 100, 2.6
+S, HOLD = 2, 2.6
 CELL, ROW = 8.4 * S, 20 * S
 font = ImageFont.truetype('/System/Library/Fonts/Menlo.ttc', 14 * S)
 bold = ImageFont.truetype('/System/Library/Fonts/Menlo.ttc', 14 * S, index=1)
 small = ImageFont.truetype('/System/Library/Fonts/Menlo.ttc', 12 * S)
+MOD = sys.argv[3] if len(sys.argv) > 3 else 'plain-view'
+# The rule over the prompt: plain-view labels it, other mods leave it plain.
+LABEL = {'plain-view': ' plain view ─'}.get(MOD, '─')
+# plain-view's card grows down from the top; other mods' frames sit on the prompt, as in a terminal.
+BOTTOM = MOD != 'plain-view'
+# Columns of the terminal drawn: the width the mod's demo mounts with.
+COLS = {'limits-meter': 112}.get(MOD, 100)
 
 def fill_of(st):
     if st.get('color'):
@@ -21,8 +30,8 @@ def fill_of(st):
         return DIM if st.get('dimColor') or not c.startswith('#') else c
     return DIM if st.get('dimColor') else FG
 
-def paint(card, caption, title):
-    prompt = [plain('─' * (COLS - 14) + ' plain view ─', dimColor=True), plain('> ')]
+def paint(card, caption, title, typed=''):
+    prompt = [plain('─' * (COLS - 1 - len(LABEL)) + LABEL, dimColor=True), plain('> ') + plain(typed)]
     rows = card + prompt
     pad, top, cap_h = 24 * S, 30 * S, 38 * S
     W, H = int(COLS * CELL + pad * 2), top + cap_h + len(rows) * ROW + pad
@@ -53,13 +62,17 @@ def paint(card, caption, title):
 frames = {}
 for row in open(sys.argv[1]):
     name, caption, tree_json = row.rstrip('\n')[len('FRAME '):].split('|', 2)
-    frames.setdefault(name, []).append((caption, trim(tree(tree_json))))
+    node = json.loads(tree_json)
+    typed = node.get('prompt', '') if 'tree' in node else ''
+    frames.setdefault(name, []).append((caption, trim(lines(node.get('tree', node))), typed))
 
 out = sys.argv[2]
 os.makedirs(out, exist_ok=True)
 for name, items in frames.items():
     tmp = tempfile.mkdtemp()
-    shots = [paint(card, caption, 'plain-view') for caption, card in items]
+    rows = max(len(card) for _, card, _ in items)
+    if BOTTOM: items = [(caption, [[] for _ in range(rows - len(card))] + card, typed) for caption, card, typed in items]
+    shots = [paint(card, caption, MOD, typed) for caption, card, typed in items]
     size = (max(im.width for im in shots), max(im.height for im in shots))
     for i, im in enumerate(shots):
         canvas = Image.new('RGB', size, BG)
@@ -68,7 +81,7 @@ for name, items in frames.items():
     last = len(items) - 1
     shutil.copy(f'{tmp}/f{last:02d}.png', f'{tmp}/f{last + 1:02d}.png')  # lets the last frame hold
     base = ['ffmpeg', '-y', '-loglevel', 'error', '-framerate', f'1/{HOLD}', '-i', f'{tmp}/f%02d.png']
-    subprocess.run(base + ['-vf', 'fps=10,scale=iw/2:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse', '-loop', '0', f'{out}/plain-view-{name}.gif'], check=True)
-    subprocess.run(base + ['-vf', 'fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p', '-c:v', 'libx264', '-crf', '20', f'{out}/plain-view-{name}.mp4'], check=True)
+    subprocess.run(base + ['-vf', 'fps=10,scale=iw/2:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse', '-loop', '0', f'{out}/{MOD}-{name}.gif'], check=True)
+    subprocess.run(base + ['-vf', 'fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p', '-c:v', 'libx264', '-crf', '20', f'{out}/{MOD}-{name}.mp4'], check=True)
     shutil.rmtree(tmp)
     print(name, len(items), 'frames')
