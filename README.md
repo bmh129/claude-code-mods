@@ -201,6 +201,24 @@ runs while the agent works. Each palette has a dark and a light set, picked by y
 
 ![plain-view: the card while the agent works, when the turn ends, waiting for an agent, and the palettes](screenshots/plain-view.svg)
 
+Four short scenarios, each drawn by the mod itself:
+
+**A task list** ([mp4](screenshots/plain-view-tasks.mp4))
+
+![plain-view: a task list](screenshots/plain-view-tasks.gif)
+
+**No task tool: a checklist in the answer** ([mp4](screenshots/plain-view-checklist.mp4))
+
+![plain-view: no task tool: a checklist in the answer](screenshots/plain-view-checklist.gif)
+
+**Esc interrupts the turn** ([mp4](screenshots/plain-view-interrupted.mp4))
+
+![plain-view: esc interrupts the turn](screenshots/plain-view-interrupted.gif)
+
+**A background agent** ([mp4](screenshots/plain-view-agents.mp4))
+
+![plain-view: a background agent](screenshots/plain-view-agents.gif)
+
 #### Install
 
 ```
