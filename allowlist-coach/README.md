@@ -6,7 +6,8 @@ It writes nothing until you pick a file to add the rule to in a dialog.
 ![allowlist-coach: the line under the permission dialog, the toast and the /allowlist pane](../screenshots/allowlist-coach.svg)
 
 - **Under the dialog:** one line with your approvals of that rule in this project toward the
-  offer, `●●●○○ 3/5`, and how many are left.
+  offer, `●●●○○ 3/5`, and how many are left. No line for a rule under `permissions.ask` or
+  `permissions.deny`, or already allowed: no offer is coming.
 - **Toast**, once per rule: "You approved `Bash(./mvnw test:*)` 5 times here. /allowlist to add
   it to permissions.allow."
 - **`/allowlist`** opens a pane with every rule, numbered: ready ones first, then by

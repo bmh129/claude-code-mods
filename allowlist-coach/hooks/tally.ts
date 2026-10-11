@@ -189,6 +189,8 @@ export const noticeFor = (entry: Entry | undefined, configured: Configured, lang
   if (!entry || entry.approved === 0) return undefined
   const w = WORDS[lang]
   const s = status(entry, configured)
+  // Under ask or deny, or allowed already: no offer is coming, so a countdown would mislead.
+  if (s === 'pinned' || s === 'allowed') return undefined
   if (s === 'risky') return w.noticeRisky(entry.approved)
   if (s === 'refused') return w.noticeRefused(entry.approved, entry.denied)
   if (s === 'ready' || s === 'dismissed') return w.noticeReady(entry.approved)
