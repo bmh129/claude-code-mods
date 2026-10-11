@@ -4,9 +4,9 @@ A quiet transcript. The tool rows step aside, and the agent's plan shows as a ca
 prompt: the current step, a bar for the request and one for each task, and a summary when the
 turn ends.
 
-![plain-view: the card while the agent works, when the turn ends, waiting for an agent, and the palettes](../screenshots/plain-view.svg)
+![plain-view: the card while the agent works, when the turn ends, a request of several lines, waiting for an agent, and the palettes](../screenshots/plain-view.svg)
 
-Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-view-demos.sh`):
+Five short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-view-demos.sh`):
 
 **A task list** ([mp4](../screenshots/plain-view-tasks.mp4))
 
@@ -23,6 +23,10 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
 **A background agent** ([mp4](../screenshots/plain-view-agents.mp4))
 
 ![plain-view: a background agent](../screenshots/plain-view-agents.gif)
+
+**A request of several lines** ([mp4](../screenshots/plain-view-request.mp4))
+
+![plain-view: a request of several lines](../screenshots/plain-view-request.gif)
 
 - **Off until you turn it on:** `/plain-view on`, the `enabled` option in `/config`, or the
   switch in launchpad's panel (`◆ pad`). The hint line under the prompt ends in `plain view`
@@ -43,6 +47,10 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
 
   A hidden message stays in the session: ctrl+o shows it, and `all` or `/plain-view off` draw
   it again. Failures, permission dialogs and the agent's questions show in every value.
+
+  The agent's thinking is not one of its messages: Claude Code draws it with no hook a mod can
+  reach, so no value hides it. To hide it, set `"showThinkingSummaries": false` in
+  `~/.claude/settings.json`; that hides it everywhere, ctrl+o included, until you set it back.
 - **The card**, above the prompt:
   - the request's first line, and the time since it was sent. A request of several lines adds
     `+5 lines` and a `show request` button that unfolds it on the card until the next request;

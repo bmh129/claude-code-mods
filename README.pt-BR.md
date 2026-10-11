@@ -182,7 +182,9 @@ Três opções mudam o que você vê, todas em `/config`:
 
 - `agentText`, o que fica das mensagens do agente: `final` (padrão: as mensagens escritas antes
   de chamar uma tool saem, a resposta final fica), `none`, `card` (a primeira frase da resposta no cartão do fim)
-  ou `all`. Falhas, diálogos de permissão e perguntas do agente sempre aparecem.
+  ou `all`. Falhas, diálogos de permissão e perguntas do agente sempre aparecem. O thinking do
+  agente é desenhado fora do alcance de qualquer mod; `"showThinkingSummaries": false` no
+  `~/.claude/settings.json` esconde ele em todo lugar, ctrl+o incluído.
 - `askForTasks` (ligada por padrão): uma linha no system prompt pede ao modelo que mantenha uma
   lista de tarefas em trabalho de mais de dois passos, ou um checklist na resposta quando a sessão
   não tem tool de tarefas, para o cartão mostrar cada passo; custa
