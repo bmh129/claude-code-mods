@@ -1021,6 +1021,23 @@ test('aba Geral: language and icons', { options: { language: 'en', icons: 'symbo
   await ui.unmount()
 })
 
+test('aba Cartão: the request option, its four values, and a press that saves one', PT, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  const ui = await pane($)
+  await ui.press({ key: 'tab:1' })
+  let drawn = show(await ui.drawn())
+  expect(drawn).toContain('Pedido no cartão')
+  expect(drawn).toContain('● line')
+  for (const v of ['joined', 'auto', 'all']) expect(drawn).toContain(`"key":"set:request:${v}"`)
+  expect(drawn).toContain('A primeira linha de texto corrido')
+  await ui.press({ key: 'set:request:auto' })
+  expect(w.sets).toEqual([{ key: 'plain-view.request', value: 'auto' }])
+  drawn = show(await ui.drawn())
+  expect(drawn).toContain('✓ Salvo · Pedido no cartão: auto')
+  await ui.unmount()
+})
+
 test('a press saves the value as /config would, and says so', PT, async ($, on) => {
   const w = engine(on)
   await start($)
@@ -1164,7 +1181,7 @@ test('a request of several lines: the first line, +N linhas and ver pedido, whic
   expect(drawn).not.toContain('ver pedido')
 })
 
-test('request auto: the first line that reads as a sentence leads the card, on the end card too', { options: { ...ON.options, request: 'auto' } }, async ($, on) => {
+test('request auto: the first line of prose leads the card, on the end card too', { options: { ...ON.options, request: 'auto' } }, async ($, on) => {
   engine(on)
   await start($)
   await ask($, MULTI)

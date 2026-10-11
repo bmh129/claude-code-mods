@@ -64,6 +64,8 @@ def lines(node, style=None, avail=None):
     kids = [lines(c, style, inner) for c in node.get('children') or [] if c not in (None, False, True)]
     kids = [k for k in kids if k]
     gap = p.get('gap', 0)
+    # With no width to spread over, space-between keeps two cells between its parts.
+    if p.get('justifyContent') == 'space-between' and p.get('flexDirection', 'row') == 'row': gap = max(gap, 2)
     if p.get('flexDirection', 'row') == 'column':
         out = []
         for i, k in enumerate(kids):

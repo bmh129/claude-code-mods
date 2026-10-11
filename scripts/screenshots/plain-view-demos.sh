@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerates screenshots/plain-view-*.gif and .mp4: the card across four scenarios.
+# Regenerates screenshots/plain-view-*.gif and .mp4: the card across five scenarios.
 # plain-view.demo.tsx drives the mod through `claude plugin test` and prints a frame per state;
 # demo.py paints each frame with Pillow and joins them with ffmpeg. Needs ffmpeg and Pillow.
 set -euo pipefail
