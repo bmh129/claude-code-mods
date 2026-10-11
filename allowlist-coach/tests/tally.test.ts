@@ -102,6 +102,13 @@ describe('status', () => {
     expect(noticeFor(entry({ rules: ['Bash(rm:*)'], approved: 9 }), NONE)).toContain('too broad')
   })
 
+  test('no dialog line for a rule under ask or deny, or already allowed: nothing will be offered', async () => {
+    expect(noticeFor(entry({ rules: ['Bash(git push:*)'], approved: 1 }), { ...NONE, ask: ['Bash(git push:*)'] })).toBe(undefined)
+    expect(noticeFor(entry({ approved: 2 }), { ...NONE, deny: ['Bash(./mvnw test:*)'] })).toBe(undefined)
+    expect(noticeFor(entry({ approved: 2 }), { ...NONE, allow: ['Bash(./mvnw test:*)'] })).toBe(undefined)
+    expect(noticeFor(entry({ approved: 2, state: 'added' }), NONE)).toBe(undefined)
+  })
+
   test('progress toward the offer, capped at the threshold', async () => {
     expect(progress(0)).toBe('○○○○○ 0/5')
     expect(progress(3)).toBe('●●●○○ 3/5')
