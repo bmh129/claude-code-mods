@@ -28,6 +28,9 @@ import {
   spawnAgent,
   startTurn,
   titleOf,
+  requestLinesOf,
+  requestModeOf,
+  requestViewOf,
   touch,
   wake,
   windowAround,
@@ -690,4 +693,62 @@ test('the end card counts the files shell commands changed, once each', () => {
   expect(t.changed).toEqual(['/repo/css/site.css', '/repo/js/theme.js', 'index.html', 'about.html'])
   const card = cardOf(endTurn(t, 'answer', NOW + 450_000), [], NOW + 450_000, 'en')!
   expect(card.kind === 'summary' && card.detail).toBe('changed 4 files · read 2 files')
+})
+
+const SCREENSHOT = '1. sim\n2. sim§. sim\n4. sim\n5. "Fala e pensamento do agent"\n\ntudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só'
+const turnOf = (text: string) => startTurn(null, [], text, 0, 'pt-BR').turn
+
+test('a request\'s lines: blank lines go, a fenced code block is one line that counts its own', () => {
+  expect(requestLinesOf(SCREENSHOT)).toEqual(['1. sim', '2. sim§. sim', '4. sim', '5. "Fala e pensamento do agent"', 'tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só'])
+  expect(requestLinesOf('Corrija o erro:\n```js\nconst a = 1\n\nfoo(a)\n```\nE rode os testes.')).toEqual(['Corrija o erro:', { code: 3 }, 'E rode os testes.'])
+  // A ~~~ fence is closed only by ~~~ as long; one left open counts what it held.
+  expect(requestLinesOf('Veja:\n~~~~\na\n```\n~~~~\nfim')).toEqual(['Veja:', { code: 2 }, 'fim'])
+  expect(requestLinesOf('Veja:\n```\na\nb')).toEqual(['Veja:', { code: 2 }])
+  // Notifications before the request are not lines of it; runs of space fold.
+  expect(requestLinesOf('<task-notification>x</task-notification>\nFaça   isso\ne aquilo')).toEqual(['Faça isso', 'e aquilo'])
+})
+
+test('a turn keeps its request\'s lines only when it has more than one; a notification keeps the last ones', () => {
+  expect(turnOf('Adicione um comentário').lines).toBeUndefined()
+  const t = turnOf(SCREENSHOT)
+  expect(t.title).toBe('1. sim')
+  expect(t.lines).toHaveLength(5)
+  const notice = startTurn(t, [], '<task-notification>done</task-notification>', 1, 'pt-BR').turn
+  expect(notice.title).toBe('1. sim')
+  expect(notice.lines).toEqual(t.lines)
+})
+
+test('the request option: line, joined, auto and all; open shows every line; one line has no view', () => {
+  const t = turnOf(SCREENSHOT)
+  expect(requestModeOf(undefined)).toBe('line')
+  expect(requestModeOf('3')).toBe('line')
+  expect(requestModeOf('auto')).toBe('auto')
+  expect(requestViewOf(t, 'line', false, 'pt-BR')).toEqual({ title: '1. sim', request: { rest: [], more: 4, isOpen: false, isJoined: false } })
+  expect(requestViewOf(t, 'auto', false, 'pt-BR').title).toBe('tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só')
+  expect(requestViewOf(t, 'auto', false, 'pt-BR').request?.more).toBe(4)
+  const joined = requestViewOf(t, 'joined', false, 'pt-BR')
+  expect(joined.title).toBe('1. sim · 2. sim§. sim · 4. sim · 5. "Fala e pensamento do agent" · tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só')
+  expect(joined.request).toEqual({ rest: [], more: 0, isOpen: false, isJoined: true })
+  expect(requestViewOf(t, 'all', false, 'pt-BR')).toEqual({ title: '1. sim', request: { rest: ['2. sim§. sim', '4. sim', '5. "Fala e pensamento do agent"', 'tudo sobe na mesma branch e mesma versao de ajuste. Ao final de tudo crie uma branch só'], more: 0, isOpen: false, isJoined: false } })
+  expect(requestViewOf(t, 'joined', true, 'pt-BR').request).toEqual({ rest: expect.any(Array), more: 0, isOpen: true, isJoined: false })
+  // auto with no prose: the first list item that reads as a sentence, else the first line.
+  expect(requestViewOf(turnOf('1. sim\n2. corrija o teste agora'), 'auto', false, 'pt-BR').title).toBe('2. corrija o teste agora')
+  expect(requestViewOf(turnOf('1. sim\n2. não'), 'auto', false, 'pt-BR').title).toBe('1. sim')
+  expect(requestViewOf(turnOf('Uma linha só'), 'all', false, 'pt-BR')).toEqual({ title: 'Uma linha só' })
+})
+
+test('pasted code shows as a line that counts its own, in both languages', () => {
+  const t = turnOf('Corrija:\n```\na\nb\n```')
+  expect(requestViewOf(t, 'all', false, 'pt-BR').request?.rest).toEqual(['⟨código · 2 linhas⟩'])
+  expect(requestViewOf(t, 'joined', false, 'en').title).toBe('Corrija: · ⟨code · 2 lines⟩')
+})
+
+test('every card carries the request view: plan, phrase, waiting and summary', () => {
+  const t = turnOf(SCREENSHOT)
+  const view = { mode: 'line' as const, isOpen: false }
+  expect(cardOf(t, [], 1000, 'pt-BR', false, [], view)).toMatchObject({ kind: 'plan', title: '1. sim', request: { more: 4 } })
+  expect(cardOf({ ...t, calls: 1, doing: 'lendo' }, [], 1000, 'pt-BR', false, [], view)).toMatchObject({ kind: 'phrase', request: { more: 4 } })
+  expect(cardOf({ ...t, calls: 1, end: 'answer', endedAt: 900 }, [], 1000, 'pt-BR', false, [], view)).toMatchObject({ kind: 'summary', request: { more: 4 } })
+  expect(cardOf({ ...t, end: 'answer', endedAt: 900 }, [], 1000, 'pt-BR', false, [{ id: 'a', label: 'x', startedAt: 0 }], view)).toMatchObject({ kind: 'waiting', request: { more: 4 } })
+  expect(cardOf(turnOf('Uma linha'), [], 1000, 'pt-BR', false, [], view)).not.toHaveProperty('request')
 })

@@ -2,7 +2,7 @@
 // the current step, what the turn touched, the agents the main loop spawned, and the card as
 // plain data that card.tsx draws.
 
-import type { Agent, AgentText, End, Item, Turn } from '../types'
+import type { Agent, AgentText, End, Item, RequestLine, Turn } from '../types'
 import { phraseOf } from './phrases'
 import type { Lang } from './ui'
 import { clip, elapsed } from './ui'
@@ -57,6 +57,39 @@ const isNotice = (text: string) => NOTICE.test(text.trimStart()) && requestOf(te
 /** The request's first line, for the card's title; none when the turn holds only a notification. */
 export const titleOf = (text: string) => firstLine(requestOf(text))
 
+/** A fenced code block's opening or closing line: ``` or ~~~. */
+const FENCED = /^ {0,3}(`{3,}|~{3,})/
+
+/**
+ * The request's lines for the card: the turn's text past its notifications, each non-blank line
+ * trimmed, and a fenced code block as one line that counts its lines (`{ code: 4 }`).
+ */
+export const requestLinesOf = (text: string): RequestLine[] => {
+  const lines: RequestLine[] = []
+  let fence: string | undefined
+  let code = 0
+  for (const raw of requestOf(text).split('\n')) {
+    const m = FENCED.exec(raw)
+    if (fence !== undefined) {
+      if (m && m[1]![0] === fence[0] && m[1]!.length >= fence.length && raw.trim() === m[1]) {
+        lines.push({ code })
+        fence = undefined
+      } else code++
+      continue
+    }
+    if (m) {
+      fence = m[1]!
+      code = 0
+      continue
+    }
+    const line = raw.trim().replace(/\s+/g, ' ')
+    if (line) lines.push(line)
+  }
+  // A fence left open still counts what it held.
+  if (fence !== undefined) lines.push({ code })
+  return lines
+}
+
 /**
  * A new turn: a fresh card, and the task list kept only while some task is still open. A new
  * request puts an open checklist read from the text to sleep (`dormant`): not drawn, it counts
@@ -65,12 +98,14 @@ export const titleOf = (text: string) => firstLine(requestOf(text))
 export const startTurn = (prev: Turn | null, items: Item[], text: string, now: number, lang: Lang): { turn: Turn; items: Item[]; dormant: Item[] } => {
   // A notification keeps the last request's title, or says an agent finished.
   const title = titleOf(text) || prev?.title || (isNotice(text) ? WORDS[lang].agentDone : WORDS[lang].untitled)
+  // A notification keeps the last request's lines with its title.
+  const lines = titleOf(text) ? requestLinesOf(text) : (prev?.lines ?? [])
   // A demo's sample list never carries into a real request.
   const open = !prev?.isDemo && items.some(i => i.status !== 'completed')
   // A notification goes on with the request before it, so its checklist stays awake.
   const isAsleep = open && !isNotice(text) && items.some(i => i.fromText)
   return {
-    turn: { title, startedAt: now, calls: 0, changed: [], read: [] },
+    turn: { title, startedAt: now, calls: 0, changed: [], read: [], ...(lines.length > 1 ? { lines } : {}) },
     items: open && !isAsleep ? items : [],
     dormant: isAsleep ? items : [],
   }
@@ -476,12 +511,48 @@ export type Card =
       /** The answer's first sentence, under `agentText: card`. */
       answer?: string
       agents?: AgentsRow
+      request?: RequestView
     }
-  | { kind: 'phrase'; title: string; time: string; doing: string; agents?: AgentsRow }
+  | { kind: 'phrase'; title: string; time: string; doing: string; agents?: AgentsRow; request?: RequestView }
   /** The main turn ended with no task list and an agent still runs: `Esperando 1 agente`. */
-  | { kind: 'waiting'; title: string; time: string; text: string; agents: AgentsRow }
+  | { kind: 'waiting'; title: string; time: string; text: string; agents: AgentsRow; request?: RequestView }
   /** A turn with no task list that called tools or agents ended: a small card with badge, time and files. */
-  | { kind: 'summary'; state: 'done' | 'stopped'; title: string; badge: string; time: string; detail?: string; answer?: string }
+  | { kind: 'summary'; state: 'done' | 'stopped'; title: string; badge: string; time: string; detail?: string; answer?: string; request?: RequestView }
+
+/** The `request` option: how much of a request of several lines the card's title shows. */
+export type RequestMode = 'line' | 'joined' | 'auto' | 'all'
+
+/** The `request` option; `line` when it names none. */
+export const requestModeOf = (option: unknown): RequestMode => (option === 'joined' || option === 'auto' || option === 'all' ? option : 'line')
+
+/** The request's lines under the card's title: the rows shown, the lines left out, and whether the button folds them. */
+export type RequestView = { rest: string[]; more: number; isOpen: boolean; isJoined: boolean }
+
+/** A line as the card draws it: a code block as `⟨código · 4 linhas⟩`. */
+const lineText = (line: RequestLine, lang: Lang) => (typeof line === 'string' ? line : WORDS[lang].codeLines(line.code))
+
+const LIST_MARK = /^(?:\d+[.)]|[-*+])\s+/
+
+/** A line of three words or more; `isProse` asks for one that is not a list item either (`1. sim`). */
+const isSentence = (line: RequestLine, isProse: boolean) =>
+  typeof line === 'string' && !(isProse && LIST_MARK.test(line)) && line.replace(LIST_MARK, '').split(' ').length >= 3
+
+/**
+ * The card's title and the request's lines under it, as `request` says: `line` the first line and
+ * a count of the rest; `auto` the first line of prose (a list item only when there is none) and a count; `joined` all of
+ * them in one line; `all` every line. Unfolded (the card's button), every line.
+ */
+export const requestViewOf = (turn: Turn, mode: RequestMode, isOpen: boolean, lang: Lang): { title: string; request?: RequestView } => {
+  const lines = (turn.lines ?? []).map(l => lineText(l, lang))
+  if (lines.length < 2) return { title: turn.title }
+  if (isOpen || mode === 'all') return { title: lines[0]!, request: { rest: lines.slice(1), more: 0, isOpen, isJoined: false } }
+  if (mode === 'joined') return { title: lines.join(' · '), request: { rest: [], more: 0, isOpen, isJoined: true } }
+  // auto: the first line of prose, else the first list item that reads as a sentence, else the first line.
+  const all = turn.lines ?? []
+  const prose = all.findIndex(l => isSentence(l, true))
+  const at = mode === 'auto' ? Math.max(0, prose >= 0 ? prose : all.findIndex(l => isSentence(l, false))) : 0
+  return { title: lines[at]!, request: { rest: [], more: lines.length - 1, isOpen, isJoined: false } }
+}
 
 /** The rows a long plan shows: WINDOW of them around the current one. */
 export const windowAround = (total: number, at: number): { start: number; end: number } => {
@@ -494,9 +565,19 @@ export const windowAround = (total: number, at: number): { start: number; end: n
  * The card for a turn, or null when there is none to show: no turn, or a turn with no list that
  * ended with no tool call and no agent (a plain conversation). `agents` are the main loop's.
  */
-export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, lang: Lang, withAnswer = false, agents: readonly Agent[] = []): Card | null => {
+export const cardOf = (
+  turn: Turn | null,
+  items: readonly Item[],
+  now: number,
+  lang: Lang,
+  withAnswer = false,
+  agents: readonly Agent[] = [],
+  view: { mode: RequestMode; isOpen: boolean } = { mode: 'line', isOpen: false },
+): Card | null => {
   if (!turn) return null
   const w = WORDS[lang]
+  const head = requestViewOf(turn, view.mode, view.isOpen, lang)
+  const req = head.request ? { request: head.request } : {}
   const span = elapsed((turn.endedAt ?? now) - turn.startedAt)
   const isOver = turn.end !== undefined
   const team = agentsRowOf(agents, now, lang)
@@ -506,7 +587,7 @@ export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, l
     if (isOver) {
       // The main turn ended with an agent running: the card waits for it.
       const running = runningOf(agents).length
-      if (running > 0 && team) return { kind: 'waiting', title: turn.title, time: elapsed(now - turn.startedAt), text: w.waiting(running), agents: team }
+      if (running > 0 && team) return { kind: 'waiting', title: head.title, time: elapsed(now - turn.startedAt), text: w.waiting(running), agents: team, ...req }
       if (turn.calls === 0 && agents.length === 0) return null
       const isDone = turn.end === 'answer'
       const touched = turn.changed.length + turn.read.length > 0 ? w.files(turn.changed.length, turn.read.length) : ''
@@ -514,20 +595,21 @@ export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, l
       return {
         kind: 'summary',
         state: isDone ? 'done' : 'stopped',
-        title: turn.title,
+        title: head.title,
         badge: isDone ? w.ready : turn.end === 'aborted' ? w.interrupted : w.stopped,
         time: isDone ? w.took(span) : w.stoppedAt(span),
         ...(detail ? { detail } : {}),
         ...(withAnswer && isDone && turn.answer ? { answer: turn.answer } : {}),
+        ...req,
       }
     }
-    if (turn.calls > 0) return { kind: 'phrase', title: turn.title, time: span, doing: capital(turn.doing ?? ''), ...(team ? { agents: team } : {}) }
+    if (turn.calls > 0) return { kind: 'phrase', title: head.title, time: span, doing: capital(turn.doing ?? ''), ...(team ? { agents: team } : {}), ...req }
     const est = Math.min(0.9, (now - turn.startedAt) / 1000 / FIRST_STEP_SECONDS)
     const rows: Row[] = [
       { kind: 'now', text: w.first[0], frac: est, status: `~${Math.round(est * 100)}%` },
       { kind: 'next', text: w.first[1], frac: 0, status: w.next },
     ]
-    return { kind: 'plan', state: 'work', title: turn.title, time: span, label: w.step(1, 2), frac: est / 2, pct: pct(est / 2), rows, ...(team ? { agents: team } : {}) }
+    return { kind: 'plan', state: 'work', title: head.title, time: span, label: w.step(1, 2), frac: est / 2, pct: pct(est / 2), rows, ...(team ? { agents: team } : {}), ...req }
   }
 
   const total = items.length
@@ -560,7 +642,7 @@ export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, l
   return {
     kind: 'plan',
     state,
-    title: turn.title,
+    title: head.title,
     ...(badge ? { badge } : {}),
     time: state === 'done' ? w.took(span) : state === 'stopped' ? w.stoppedAt(span) : span,
     label: state === 'done' && completed === total ? w.steps(total, total) : w.step(Math.min(total, (at < 0 ? total - 1 : at) + 1), total),
@@ -572,6 +654,7 @@ export const cardOf = (turn: Turn | null, items: readonly Item[], now: number, l
     ...(isOver && touched ? { files: touched } : {}),
     ...(withAnswer && state === 'done' && turn.answer ? { answer: turn.answer } : {}),
     ...(team ? { agents: team } : {}),
+    ...req,
   }
 }
 

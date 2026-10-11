@@ -18,13 +18,16 @@
 //          and wakes only if an answer writes one of its tasks again. The `askForTasks` option
 //          asks the model, in the system prompt, to keep a task list with those tools, or a
 //          checklist in its reply when the session has none.
+//   title  the request's first line, and `+5 linhas` when it has more; the `request` option shows
+//          them joined, from the first line that reads as a sentence, or all of them. The card's
+//          `ver pedido` button unfolds the whole request until the next one.
 //   words  `agentText`: final (the default) hides the text of each step that went on to call
 //          tools, so the final answer stays; none hides every message; card hides them all and
 //          puts the answer's first sentence in the end card; all keeps every word.
 //   bars   a gradient of the `palette` option's colors, and a shine that runs while the agent
 //          works (`animation`); see palettes.ts and the design guide's "Exception: gradients".
 //   pane   /plain-view alone, or /plain-view config: a pane (a tab like /limits and /watch) with
-//          the seven options in three tabs, Transcript, Card and General. Each value is a button
+//          the eight options in three tabs, Transcript, Card and General. Each value is a button
 //          that saves it as /config would ($.config.set); the engine reloads the mod with it, and
 //          the pane opens again if the reload closed it. A locked option (managed settings) shows
 //          its value and why it does not change; `defaults` asks first, then resets them all.
@@ -56,6 +59,7 @@ import {
   NEVER_HIDDEN,
   normalize,
   reconcileAgents,
+  requestModeOf,
   runningOf,
   showsBlock,
   spawnAgent,
@@ -64,6 +68,7 @@ import {
   touch,
   wake,
 } from './plan'
+import type { RequestMode } from './plan'
 import type { Setting, SettingKey, SettingValue } from './settings'
 import { awayFromDefaults, SETTINGS, settingsOf, tabOf, TABS } from './settings'
 import type { IconStyle, Lang, Verb } from './ui'
@@ -73,6 +78,7 @@ import { COMMAND, MODE, WATCH, WORDS } from './words'
 const turn = atom({ plugin: 'plain-view', key: 'turn' } as const, null as Turn | null)
 const items = atom({ plugin: 'plain-view', key: 'items' } as const, [] as Item[])
 const dormant = atom({ plugin: 'plain-view', key: 'dormant' } as const, [] as Item[])
+const unfolded = atom({ plugin: 'plain-view', key: 'unfolded' } as const, false)
 const tick = atom({ plugin: 'plain-view', key: 'tick' } as const, 0)
 const mids = atom({ plugin: 'plain-view', key: 'mids' } as const, [] as string[])
 const agents = atom({ plugin: 'plain-view', key: 'agents' } as const, [] as Agent[])
@@ -99,6 +105,7 @@ let palette: Palette = paletteOf(undefined)
 let animate = true
 let askForTasks = true
 let agentText: AgentText = 'final'
+let requestMode: RequestMode = 'line'
 let theme: unknown = 'dark'
 // The timers of this load; a reload starts them again from session.start.
 let ticker: Timer | null = null
@@ -159,7 +166,7 @@ const setOption = async ($: EngineInterface, key: string, value: unknown): Promi
   return result && 'deny' in result && result.deny !== undefined ? String(result.deny) : null
 }
 
-/** The seven options as /config holds them now. */
+/** The eight options as /config holds them now. */
 const settingsNow = async ($: EngineInterface) => settingsOf(await $.config.list().catch(() => []), loaded)
 
 const openPane = ($: EngineInterface) =>
@@ -208,7 +215,7 @@ const resetOptions = async ($: EngineInterface) => {
   await update($, resetting, () => false)
 }
 
-/** `defaults`: asks first, since it may change all seven at once. */
+/** `defaults`: asks first, since it may change all eight at once. */
 const askReset = async ($: EngineInterface) => {
   const p = WORDS[lang].pane
   if (awayFromDefaults(await settingsNow($)).length === 0) {
@@ -320,6 +327,7 @@ export const register: Register = (on, options) => {
   animate = options.animation !== false
   askForTasks = options.askForTasks !== false
   agentText = agentTextOf(options.agentText)
+  requestMode = requestModeOf(options.request)
   loaded = options
 
   on('session.start', async ($, e, next) => {
@@ -374,6 +382,7 @@ export const register: Register = (on, options) => {
     await update($, items, () => fresh.items)
     await update($, dormant, () => fresh.dormant)
     await update($, turn, () => fresh.turn)
+    await update($, unfolded, () => false)
     // A new request keeps the agents still running; a notification keeps the finished ones too.
     await update($, agents, list => keepAgents(list, e.text))
     if (isOn) startTicking($, runningOf(await read($, agents)).length > 0)
@@ -482,7 +491,8 @@ export const register: Register = (on, options) => {
     if (!isOn && !t?.isDemo) return next(e)
     // A demo's card shows no agents.
     const team = t?.isDemo ? [] : await read($, agents)
-    const card = cardOf(t, await read($, items), await $.clock.now(), lang, agentText === 'card', team)
+    const view = { mode: requestMode, isOpen: await read($, unfolded) }
+    const card = cardOf(t, await read($, items), await $.clock.now(), lang, agentText === 'card', team, view)
     if (!card) return next(e)
     const n = await read($, tick)
     const isWorking = (t !== null && t.end === undefined) || runningOf(team).length > 0
@@ -496,6 +506,8 @@ export const register: Register = (on, options) => {
       icons: style,
       answerLabel: WORDS[lang].answer,
       ...(hasWatch ? { onWatch: () => quietly($.command.run({ command: WATCH, args: '' })) } : {}),
+      request: { more: WORDS[lang].moreLines, show: WORDS[lang].showRequest, fold: WORDS[lang].foldRequest },
+      onRequest: () => quietly(update($, unfolded, v => !v)),
     })
     const { Box } = $.ui.resolve(e)
     const theirs = await next(e)

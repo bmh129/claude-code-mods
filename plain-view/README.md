@@ -44,7 +44,10 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
   A hidden message stays in the session: ctrl+o shows it, and `all` or `/plain-view off` draw
   it again. Failures, permission dialogs and the agent's questions show in every value.
 - **The card**, above the prompt:
-  - the request's first line, and the time since it was sent;
+  - the request's first line, and the time since it was sent. A request of several lines adds
+    `+5 lines` and a `show request` button that unfolds it on the card until the next request;
+    the `request` option shows the lines joined, from the first line of prose (`auto`), or all
+    of them. A pasted code block shows as one line, `⟨code · 4 lines⟩`;
   - `Step 2 of 4` with a bar for the whole request and its percentage;
   - one row per task of the agent's list (`TaskCreate`/`TaskUpdate` or `TodoWrite`) with its
     own bar: `Done`, `~40%` on the current step and what it is doing (`reading weather.ts`, a
@@ -103,9 +106,9 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
 
 ## Settings pane
 
-`/plain-view` opens a pane, a tab like those of `/limits` and `/watch`, with the seven options in
-three tabs: **Transcript** (`enabled`, `agentText`, `askForTasks`), **Card** (`palette` with a
-sample of each, `animation`, and a preview of the card) and **General** (`language`, `icons`).
+`/plain-view` opens a pane, a tab like those of `/limits` and `/watch`, with the eight options in
+three tabs: **Transcript** (`enabled`, `agentText`, `askForTasks`), **Card** (`request`, `palette`
+with a sample of each, `animation`, and a preview of the card) and **General** (`language`, `icons`).
 Each value is a button with a line on what it does; a press saves it as `/config` would and the
 pane says `✓ Saved`. An option your organization sets (managed settings) shows its value and why
 it does not change. `defaults` asks first, then puts the others back to their defaults. In
@@ -141,6 +144,7 @@ Set them in `/config`, or under `pluginConfigs` in `settings.json`.
 | Option | Default | What it does |
 | --- | --- | --- |
 | `enabled` | `false` | Hide the tool rows that worked and show the card |
+| `request` | `line` | How much of a request of several lines the card's title shows: `line` (the first line and `+5 lines`), `joined` (all lines in one, cut at the card's width), `auto` (the first line of prose; list items such as `1. yes` go into the count), `all` (every line). The card's `show request` button unfolds the whole request |
 | `palette` | `claude` | The bar colors: `claude`, `clean`, `sunset`, `aurora`, `ocean`, `neon`, `forest`, `calm` |
 | `animation` | `true` | The shine on the bars and the gradient. Off: still bars in theme colors |
 | `agentText` | `final` | What stays of the agent's messages: `final` (the final answer), `none`, `card` (the answer's first sentence in the end card), `all` |

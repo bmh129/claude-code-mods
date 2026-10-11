@@ -6,7 +6,7 @@
 
 import type { Elements } from 'claude-code'
 
-import type { AgentsRow, Card, Row } from './plan'
+import type { AgentsRow, Card, RequestView, Row } from './plan'
 import type { Stops } from './palettes'
 import { hex, mix, titleColor } from './palettes'
 import type { IconStyle } from './ui'
@@ -100,6 +100,9 @@ export type DrawOptions = {
   answerLabel?: string
   /** Opens agent-watch's pane: the agents row shows `/watch` only when this is given. */
   onWatch?: () => void
+  /** A request of several lines: `+5 linhas`, and the button that unfolds it (shown only with `onRequest`). */
+  request?: { more: (n: number) => string; show: string; fold: string }
+  onRequest?: () => void
 }
 
 /** The plan card: a bordered box above the prompt, as the approved prototype draws it. */
@@ -157,13 +160,38 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
     )
   }
 
+  // A request of several lines: `+5 linhas` after the title, the button that unfolds the request
+  // (only when something is left out), and its lines under the title.
+  const request: RequestView | undefined = card.request
+  const words = o.request
+  const titled = (text: string, room: number, pal: 'work' | 'ok' | 'off', badge?: { text: string; state: 'done' | 'stopped' }) => {
+    const more = request && request.more > 0 && words ? `  ${words.more(request.more)}` : ''
+    const label = (request?.isOpen ? words?.fold : words?.show) ?? ''
+    const onRequest = o.onRequest
+    const hasButton =
+      request !== undefined && words !== undefined && onRequest !== undefined && Button !== undefined && (request.more > 0 || request.isOpen || (request.isJoined && text.length > room - more.length))
+    return (
+      <Box flexDirection="row">
+        <Text>
+          {badge ? <Text bold inverse color={badge.state === 'done' ? 'success' : 'inactive'}>{` ${badge.text} `}</Text> : <Text color="claude">✦</Text>}
+          <Text> </Text>
+          {title(text, room - more.length - (hasButton ? label.length + 6 : 0), pal)}
+          {more ? <Text dimColor>{more}</Text> : null}
+        </Text>
+        {hasButton ? <Text>  </Text> : null}
+        {hasButton ? <Button key="request" plain dimColor label={label} onPress={() => onRequest()} /> : null}
+      </Box>
+    )
+  }
+  const requestRows = () => request?.rest.map((line, i) => <Text key={`request${i}`} dimColor={line.startsWith('⟨')}>{`  ${clip(line, inner - 2)}`}</Text>)
+
   const titleRow = (text: string, time: string) => (
-    <Box flexDirection="row" justifyContent="space-between">
-      <Text>
-        <Text color="claude">✦ </Text>
-        {title(text, inner - 10, 'work')}
-      </Text>
-      <Text dimColor>{time}</Text>
+    <Box flexDirection="column">
+      <Box flexDirection="row" justifyContent="space-between">
+        {titled(text, inner - 10, 'work')}
+        <Text dimColor>{time}</Text>
+      </Box>
+      {requestRows()}
     </Box>
   )
 
@@ -200,13 +228,8 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
   }
 
   // A badge, then the title in the end's colors.
-  const badged = (badge: string, state: 'done' | 'stopped', text: string) => (
-    <Text>
-      <Text bold inverse color={state === 'done' ? 'success' : 'inactive'}>{` ${badge} `}</Text>
-      <Text> </Text>
-      {title(text, inner - badge.length - 18, state === 'done' ? 'ok' : 'off')}
-    </Text>
-  )
+  const badged = (badge: string, state: 'done' | 'stopped', text: string) =>
+    titled(text, inner - badge.length - 18, state === 'done' ? 'ok' : 'off', { text: badge, state })
 
   const answerLine = (answer: string | undefined) =>
     answer !== undefined && (
@@ -223,6 +246,7 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
           {badged(card.badge, card.state, card.title)}
           <Text dimColor>{card.time}</Text>
         </Box>
+        {requestRows()}
         {card.detail !== undefined && <Text dimColor>{`  ${card.detail}`}</Text>}
         {answerLine(card.answer)}
       </Box>
@@ -231,14 +255,7 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
 
   const pal = card.state === 'done' ? 'ok' : card.state === 'stopped' ? 'off' : 'work'
   const border = card.state === 'done' ? 'success' : card.state === 'stopped' ? 'inactive' : 'claude'
-  const head = card.badge && card.state !== 'work' ? (
-    badged(card.badge, card.state, card.title)
-  ) : (
-    <Text>
-      <Text color="claude">✦ </Text>
-      {title(card.title, inner - 12, pal)}
-    </Text>
-  )
+  const head = card.badge && card.state !== 'work' ? badged(card.badge, card.state, card.title) : titled(card.title, inner - 12, pal)
 
   const row = (r: Row, i: number) => {
     const icon = r.kind === 'done' ? ICONS.done : r.kind === 'now' ? ICONS.now : r.kind === 'halted' ? ICONS.halted : ICONS.wait
@@ -266,6 +283,7 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
         {head}
         <Text dimColor>{card.time}</Text>
       </Box>
+      {requestRows()}
       <Box flexDirection="row" justifyContent="space-between">
         <Box flexDirection="row">
           <Text dimColor>{clip(card.label, L.label).padEnd(L.label)}</Text>

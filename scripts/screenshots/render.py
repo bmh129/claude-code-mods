@@ -254,12 +254,13 @@ open(f'{out}/launchpad.svg', 'w').write(svg([
 
 # plain-view
 d = load(f'{snap}/plain-view.txt')
-work, done, waiting = trim(tree(d['BAND'][0])), trim(tree(d['BAND'][1])), trim(tree(d['BAND'][2]))
+work, done, multi, waiting = (trim(tree(b)) for b in d['BAND'][:4])
 pw = max(width(l) for l in work) - 2
 prompt = [plain('─' * (pw - 12) + ' plain view ─', dimColor=True), plain('> ')]
 open(f'{out}/plain-view.svg', 'w').write(svg([
     ('card above the prompt while the agent works (palette claude)', 'raw', work + prompt),
     ('when the turn ends', 'raw', done),
+    ('a request of several lines: its first line, the count and the button that unfolds it', 'raw', multi),
     ('no task list, the turn over, a background agent still running', 'raw', waiting),
     ('/plain-view palette', 'raw', trim(tree(d['TREE'][0]))),
     ('/plain-view: the settings pane, Transcript tab', 'pane:plain-view', wrapped(d['PANE'][0], cw - 4)),

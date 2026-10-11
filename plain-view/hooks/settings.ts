@@ -1,15 +1,15 @@
-// The settings pane's model, with no `$`: the seven options, the pane's three tabs, each option's
+// The settings pane's model, with no `$`: the eight options, the pane's three tabs, each option's
 // values and default (as plugin.json declares them), and what the /config rows say about each.
 
 import { PALETTES } from './palettes'
 
-export type SettingKey = 'enabled' | 'agentText' | 'askForTasks' | 'palette' | 'animation' | 'language' | 'icons'
+export type SettingKey = 'enabled' | 'agentText' | 'askForTasks' | 'request' | 'palette' | 'animation' | 'language' | 'icons'
 export type SettingValue = boolean | string
 
 /** The pane's tabs, in order: Transcript, Card, General. */
 export const TABS: readonly (readonly SettingKey[])[] = [
   ['enabled', 'agentText', 'askForTasks'],
-  ['palette', 'animation'],
+  ['request', 'palette', 'animation'],
   ['language', 'icons'],
 ]
 
@@ -18,6 +18,7 @@ export const SETTINGS: Readonly<Record<SettingKey, { values: readonly SettingVal
   enabled: { values: [true, false], initial: false },
   agentText: { values: ['final', 'none', 'card', 'all'], initial: 'final' },
   askForTasks: { values: [true, false], initial: true },
+  request: { values: ['line', 'joined', 'auto', 'all'], initial: 'line' },
   palette: { values: PALETTES.map(p => p.id), initial: 'claude' },
   animation: { values: [true, false], initial: true },
   language: { values: ['auto', 'pt-BR', 'en'], initial: 'auto' },

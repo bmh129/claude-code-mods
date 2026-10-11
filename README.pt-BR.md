@@ -178,7 +178,7 @@ lista de tarefas o cartão espera por eles (`Esperando 1 agente`). Um turno sem 
 tools ou agentes termina num cartão verde pequeno (`✓ Pronto`, o tempo, os arquivos e os
 agentes); uma conversa simples não deixa cartão.
 
-Duas opções mudam o que você vê, as duas em `/config`:
+Três opções mudam o que você vê, todas em `/config`:
 
 - `agentText`, o que fica das mensagens do agente: `final` (padrão: as mensagens escritas antes
   de chamar uma tool saem, a resposta final fica), `none`, `card` (a primeira frase da resposta no cartão do fim)
@@ -188,6 +188,9 @@ Duas opções mudam o que você vê, as duas em `/config`:
   não tem tool de tarefas, para o cartão mostrar cada passo; custa
   alguns tokens por pedido. Desligada, o cartão lê a lista que o agente mantém sozinho, ou um
   checklist na resposta.
+- `request`, quanto de um pedido de várias linhas o título do cartão mostra: `line` (padrão: a
+  primeira linha e `+5 linhas`), `joined`, `auto` (a primeira linha de texto corrido) ou `all`. O
+  botão `ver pedido` do cartão abre o pedido inteiro.
 
 ```
 /plain-view                   o painel de configuração: as opções em três abas, um clique cada

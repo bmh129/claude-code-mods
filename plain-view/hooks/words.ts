@@ -36,6 +36,12 @@ type Words = {
   halted: string
   moreDone: (n: number) => string
   moreAfter: (n: number) => string
+  /** A request's lines the title leaves out, `+5 linhas`; a pasted code block, `⟨código · 4 linhas⟩`. */
+  moreLines: (n: number) => string
+  codeLines: (n: number) => string
+  /** The card's button that unfolds the whole request, and folds it back. */
+  showRequest: string
+  foldRequest: string
   /** What the turn touched: `mudei 2 arquivos · li 3 arquivos`. */
   files: (changed: number, read: number) => string
   /** The badge of the small card a turn with no task list leaves. */
@@ -132,6 +138,10 @@ export const WORDS: Record<Lang, Words> = {
     halted: 'Parado',
     moreDone: n => `✓ mais ${n} ${n === 1 ? 'feito' : 'feitos'}`,
     moreAfter: n => `○ mais ${n} depois`,
+    moreLines: n => `+${plural(n, 'linha', 'linhas')}`,
+    codeLines: n => `⟨código · ${plural(n, 'linha', 'linhas')}⟩`,
+    showRequest: 'ver pedido',
+    foldRequest: 'recolher',
     files: (changed, read) =>
       changed > 0 ? `mudei ${plural(changed, 'arquivo', 'arquivos')} · li ${plural(read, 'arquivo', 'arquivos')}` : `li ${plural(read, 'arquivo', 'arquivos')}`,
     ready: '✓ Pronto',
@@ -171,7 +181,7 @@ export const WORDS: Record<Lang, Words> = {
       '- `palette` mostra as 8 paletas e troca a cor das barras',
       '- `help` esta ajuda',
       'Falha de tool, permissão e perguntas sempre aparecem inteiras.',
-      'Opções no painel ou em /config → plain-view: agentText, askForTasks, palette, animation, language, icons.',
+      'Opções no painel ou em /config → plain-view: agentText, askForTasks, request, palette, animation, language, icons.',
       'agentText: final esconde o que o agente escreve antes de chamar tools e deixa a resposta final (padrão); none, nada; card, a resposta no cartão; all, tudo.',
       'Paleta padrão: claude. /plain-view palette mostra as 8.',
     ].join('\n'),
@@ -180,7 +190,7 @@ export const WORDS: Record<Lang, Words> = {
       heading: '✻ plain-view · configuração',
       hint: 'Vale para todas as sessões. Fica salvo em /config → plain-view.',
       tabs: ['Transcript', 'Cartão', 'Geral'],
-      labels: { enabled: 'Ligado', agentText: 'Fala do agente', askForTasks: 'Pedir lista de tarefas', palette: 'Cores das barras', animation: 'Animação', language: 'Idioma', icons: 'Ícones' },
+      labels: { enabled: 'Ligado', agentText: 'Fala do agente', askForTasks: 'Pedir lista de tarefas', request: 'Pedido no cartão', palette: 'Cores das barras', animation: 'Animação', language: 'Idioma', icons: 'Ícones' },
       yes: 'sim',
       no: 'não',
       values: {
@@ -192,6 +202,12 @@ export const WORDS: Record<Lang, Words> = {
           all: 'Mostra toda a fala do agente.',
         },
         askForTasks: { true: 'Uma linha no system prompt pede uma lista de tarefas. Custa poucos tokens por pedido.', false: 'O cartão lê só a lista que o modelo fizer por conta própria.' },
+        request: {
+          line: 'A primeira linha do pedido e quantas faltam (+5 linhas). (padrão)',
+          joined: 'Todas as linhas numa só, separadas por ·, cortadas na largura do cartão.',
+          auto: 'A primeira linha de texto corrido. Itens de lista (1. sim) entram na contagem.',
+          all: 'O pedido inteiro. O cartão cresce e rola quando passa do limite.',
+        },
         animation: { true: 'Um brilho corre nas barras enquanto o agente trabalha.', false: 'Barras paradas, nas cores do tema.' },
         language: { auto: 'Segue o LANG do sistema.', 'pt-BR': 'Português do Brasil.', en: 'Inglês.' },
         icons: { auto: 'symbol no terminal do JetBrains, emoji nos outros.', emoji: 'Passos como ✅ 🟠 ⚪.', symbol: 'Passos como ✓ ● ○, para terminais que desenham emoji torto.' },
@@ -231,6 +247,10 @@ export const WORDS: Record<Lang, Words> = {
     halted: 'Stopped',
     moreDone: n => `✓ ${n} more done`,
     moreAfter: n => `○ ${n} more after`,
+    moreLines: n => `+${plural(n, 'line', 'lines')}`,
+    codeLines: n => `⟨code · ${plural(n, 'line', 'lines')}⟩`,
+    showRequest: 'show request',
+    foldRequest: 'fold',
     files: (changed, read) =>
       changed > 0 ? `changed ${plural(changed, 'file', 'files')} · read ${plural(read, 'file', 'files')}` : `read ${plural(read, 'file', 'files')}`,
     ready: '✓ Done',
@@ -270,7 +290,7 @@ export const WORDS: Record<Lang, Words> = {
       '- `palette` shows the 8 palettes and changes the bar colors',
       '- `help` this help',
       'Tool failures, permissions and questions always show in full.',
-      'Options in the pane or in /config → plain-view: agentText, askForTasks, palette, animation, language, icons.',
+      'Options in the pane or in /config → plain-view: agentText, askForTasks, request, palette, animation, language, icons.',
       'agentText: final hides what the agent writes before calling tools and keeps the final answer (default); none, nothing; card, the answer in the card; all, everything.',
       'Default palette: claude. /plain-view palette shows all 8.',
     ].join('\n'),
@@ -279,7 +299,7 @@ export const WORDS: Record<Lang, Words> = {
       heading: '✻ plain-view · settings',
       hint: 'Applies to every session. Saved in /config → plain-view.',
       tabs: ['Transcript', 'Card', 'General'],
-      labels: { enabled: 'On', agentText: "The agent's words", askForTasks: 'Ask for a task list', palette: 'Bar colors', animation: 'Animation', language: 'Language', icons: 'Icons' },
+      labels: { enabled: 'On', agentText: "The agent's words", askForTasks: 'Ask for a task list', request: 'Request on the card', palette: 'Bar colors', animation: 'Animation', language: 'Language', icons: 'Icons' },
       yes: 'yes',
       no: 'no',
       values: {
@@ -291,6 +311,12 @@ export const WORDS: Record<Lang, Words> = {
           all: "Shows all the agent's words.",
         },
         askForTasks: { true: 'One line in the system prompt asks for a task list. Costs a few tokens per request.', false: 'The card reads only the list the model keeps on its own.' },
+        request: {
+          line: "The request's first line and how many are left (+5 lines). (default)",
+          joined: "All lines in one, joined by ·, cut at the card's width.",
+          auto: 'The first line of prose. List items (1. yes) go into the count.',
+          all: 'The whole request. The card grows, and scrolls past its limit.',
+        },
         animation: { true: 'A shine runs along the bars while the agent works.', false: "Still bars, in the theme's colors." },
         language: { auto: "Follows the system's LANG.", 'pt-BR': 'Brazilian Portuguese.', en: 'English.' },
         icons: { auto: 'symbol in a JetBrains terminal, emoji elsewhere.', emoji: 'Steps as ✅ 🟠 ⚪.', symbol: 'Steps as ✓ ● ○, for terminals that draw emoji at odd widths.' },
