@@ -29,6 +29,7 @@ import {
   startTurn,
   titleOf,
   touch,
+  wake,
   windowAround,
 } from '../hooks/plan'
 
@@ -64,8 +65,57 @@ test('a turn a notification starts keeps the last title, or says an agent finish
 test('the task list outlives a turn only while a task is open', () => {
   const open = at(created(), ['completed', 'in_progress'])
   expect(startTurn(null, open, 'continue', NOW, 'en').items).toHaveLength(4)
+  expect(startTurn(null, open, 'continue', NOW, 'en').dormant).toEqual([])
   const closed = at(created(), ['completed', 'completed', 'completed', 'completed'])
   expect(startTurn(null, closed, 'next', NOW, 'en').items).toEqual([])
+})
+
+const RECIPES = '1. [x] Pick 3 dishes\n2. [ ] Write 3 recipes\n3. [ ] Add a shopping list\n4. [ ] Review'
+
+test('an open checklist from the text sleeps at the next request: not on the card, no calls', () => {
+  const open = countCall(applyAnswer([], RECIPES))
+  const next = startTurn(fresh().turn, open, 'Analyze these video frames', NOW, 'en')
+  expect(next.items).toEqual([])
+  expect(next.dormant).toBe(open)
+  const card = cardOf(next.turn, next.items, NOW + 3000, 'en')!
+  expect(card.kind === 'plan' && card.label).toBe('Step 1 of 2')
+  // A notification goes on with the same request: the checklist stays awake.
+  const notice = '<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>'
+  expect(startTurn(fresh().turn, open, notice, NOW, 'en')).toMatchObject({ items: open, dormant: [] })
+  // All done, or a demo before it: nothing carries, awake or asleep.
+  const done = applyAnswer([], RECIPES.replace(/\[ \]/g, '[x]'))
+  expect(startTurn(fresh().turn, done, 'next', NOW, 'en')).toMatchObject({ items: [], dormant: [] })
+  const demo = demoOf(1, NOW, 'en')
+  expect(startTurn(demo.turn, applyAnswer([], RECIPES), 'real', NOW, 'en')).toMatchObject({ items: [], dormant: [] })
+})
+
+test('a checklist that shares a task wakes the sleeping one, with its calls and ticks', () => {
+  const asleep = countCall(countCall(applyAnswer([], RECIPES)))
+  expect(asleep[1]!.calls).toBe(2)
+  // Written again in full, a step further on.
+  const full = wake([], asleep, RECIPES.replace('2. [ ]', '2. [x]'))
+  expect(full.dormant).toEqual([])
+  expect(full.items.map(i => [i.subject, i.status, i.calls])).toEqual([
+    ['Pick 3 dishes', 'completed', 0],
+    ['Write 3 recipes', 'completed', 2],
+    ['Add a shopping list', 'pending', 0],
+    ['Review', 'pending', 0],
+  ])
+  // Only the steps just done: they tick off, the rest of the sleeping list stays.
+  const part = wake([], asleep, 'Done:\n- [x] Write 3 recipes\n- [x] **Add a shopping list**')
+  expect(part.items.map(i => i.status)).toEqual(['completed', 'completed', 'completed', 'pending'])
+  expect(part.items[1]!.calls).toBe(2)
+  // An answer with no checklist leaves it asleep.
+  expect(wake([], asleep, 'Looking at the frames.')).toEqual({ items: [], dormant: asleep })
+})
+
+test('a checklist that shares no task is the list, and the sleeping one is dropped', () => {
+  const asleep = countCall(applyAnswer([], RECIPES))
+  const other = wake([], asleep, '- [ ] Extract the frames\n- [ ] Describe each scene')
+  expect(other.items.map(i => [i.subject, i.calls])).toEqual([['Extract the frames', 0], ['Describe each scene', 0]])
+  expect(other.dormant).toEqual([])
+  // With no sleeping list, an answer does what applyAnswer does.
+  expect(wake([], [], RECIPES).items).toEqual(applyAnswer([], RECIPES))
 })
 
 test('TaskCreate adds with its id, TaskUpdate changes and deletes, TodoWrite replaces', () => {

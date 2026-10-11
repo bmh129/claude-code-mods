@@ -301,6 +301,66 @@ test('a checklist in the agent\'s answer becomes the plan when it keeps no task 
   expect(drawn).not.toContain('Outra coisa')
 })
 
+const RECIPES = ['Escolher 3 pratos', 'Escrever 3 receitas', 'Montar a lista de compras', 'Revisar']
+const checklist = (done: number) => RECIPES.map((t, i) => `${i + 1}. [${i < done ? 'x' : ' '}] ${t}`).join('\n')
+
+/** A request whose checklist is left open: the first task done, two calls on the second. */
+const leaveOpen = async ($: any, w: World) => {
+  await ask($, 'Escreva 3 receitas')
+  await step($, w, checklist(1))
+  await call($, 'Read', { file_path: '/repo/a.md' })
+  await call($, 'Read', { file_path: '/repo/b.md' })
+  await end($)
+}
+
+test('an open checklist stays off the next request\'s card and counts none of its calls', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await leaveOpen($, w)
+  await ask($, 'Analise os frames do vídeo')
+  let drawn = await card($)
+  expect(drawn).toContain('Entender o pedido')
+  expect(drawn).not.toContain('Escrever 3 receitas')
+  await call($, 'Read', { file_path: '/repo/frame1.png' })
+  await step($, w, 'Os frames mostram uma cozinha.')
+  drawn = await card($)
+  expect(drawn).toContain('frame1.png')
+  expect(drawn).not.toContain('Escrever 3 receitas')
+  await end($)
+  expect(await card($)).not.toContain('Escrever 3 receitas')
+})
+
+test('a continuation that writes the checklist again wakes it with the calls it counted', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await leaveOpen($, w)
+  await ask($, 'continue')
+  expect(await card($)).not.toContain('Escrever 3 receitas')
+  // Calls before the checklist comes back count for no task.
+  for (let i = 0; i < 3; i++) await call($, 'Read', { file_path: `/repo/r${i}.md` })
+  await step($, w, `Receitas prontas.\n\n${checklist(2)}`)
+  await call($, 'Read', { file_path: '/repo/c.md' })
+  const drawn = await card($)
+  expect(drawn).toContain('Passo 3 de 4')
+  // One call against the two the woken task kept: ~50%, not the 25% of a fresh list.
+  expect(drawn).toContain('~50%')
+})
+
+test('a request that ends without writing the checklist again drops it', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await leaveOpen($, w)
+  await ask($, 'Uma pergunta à parte')
+  await end($)
+  await ask($, 'continue')
+  await step($, w, checklist(2))
+  await call($, 'Read', { file_path: '/repo/c.md' })
+  const drawn = await card($)
+  expect(drawn).toContain('Passo 3 de 4')
+  // A fresh list: the calls of the first request are gone.
+  expect(drawn).toContain('~25%')
+})
+
 test('askForTasks: one line in the system prompt while the mod is on', { options: { enabled: true, askForTasks: true } }, async ($, on) => {
   engine(on)
   await start($)

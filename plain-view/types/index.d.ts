@@ -58,8 +58,10 @@ declare module 'claude-code' {
   interface PluginState {
     'plain-view': {
       turn: Turn | null
-      /** The agent's task list; it outlives a turn until every task is done. */
+      /** The agent's task list; a task tool's outlives a turn until every task is done. */
       items: Item[]
+      /** An open checklist from the text the last request left: not drawn, counts no call, wakes when an answer writes one of its tasks. */
+      dormant: Item[]
       /** Moves while the agent works, so the bars' shine redraws. */
       tick: number
       /** Texts of steps that went on to call tools, normalized: the blocks `agentText: final` hides. */

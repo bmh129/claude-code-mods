@@ -14,9 +14,10 @@
 //          agente`). A turn with no list that called tools or agents ends in a small card
 //          (`✓ Pronto`, the time, the files and the agents); a plain conversation leaves none.
 //   plan   from the agent's TaskCreate, TaskUpdate and TodoWrite calls, else from a checklist it
-//          writes in its answer (`1. [ ] Ler a API`). The `askForTasks` option asks the model, in
-//          the system prompt, to keep a task list with those tools, or a checklist in its reply
-//          when the session has none.
+//          writes in its answer (`1. [ ] Ler a API`). An open checklist sleeps at the next request
+//          and wakes only if an answer writes one of its tasks again. The `askForTasks` option
+//          asks the model, in the system prompt, to keep a task list with those tools, or a
+//          checklist in its reply when the session has none.
 //   words  `agentText`: final (the default) hides the text of each step that went on to call
 //          tools, so the final answer stays; none hides every message; card hides them all and
 //          puts the answer's first sentence in the end card; all keeps every word.
@@ -43,7 +44,6 @@ import { PALETTES, paletteOf, stopsOf } from './palettes'
 import type { Palette } from './palettes'
 import {
   agentTextOf,
-  applyAnswer,
   applyTask,
   cardOf,
   countCall,
@@ -62,6 +62,7 @@ import {
   startTurn,
   TASK_TOOLS,
   touch,
+  wake,
 } from './plan'
 import type { Setting, SettingKey, SettingValue } from './settings'
 import { awayFromDefaults, SETTINGS, settingsOf, tabOf, TABS } from './settings'
@@ -71,6 +72,7 @@ import { COMMAND, MODE, WATCH, WORDS } from './words'
 
 const turn = atom({ plugin: 'plain-view', key: 'turn' } as const, null as Turn | null)
 const items = atom({ plugin: 'plain-view', key: 'items' } as const, [] as Item[])
+const dormant = atom({ plugin: 'plain-view', key: 'dormant' } as const, [] as Item[])
 const tick = atom({ plugin: 'plain-view', key: 'tick' } as const, 0)
 const mids = atom({ plugin: 'plain-view', key: 'mids' } as const, [] as string[])
 const agents = atom({ plugin: 'plain-view', key: 'agents' } as const, [] as Agent[])
@@ -351,6 +353,7 @@ export const register: Register = (on, options) => {
     const now = await $.clock.now()
     const fresh = startTurn(await read($, turn), await read($, items), e.text, now, lang)
     await update($, items, () => fresh.items)
+    await update($, dormant, () => fresh.dormant)
     await update($, turn, () => fresh.turn)
     // A new request keeps the agents still running; a notification keeps the finished ones too.
     await update($, agents, list => keepAgents(list, e.text))
@@ -376,11 +379,18 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  // The agent's answer at the end of each step: a checklist in it becomes the plan.
+  // The agent's answer at the end of each step: a checklist in it becomes the plan, or wakes the
+  // one the last request left open.
   on('turn.step', async function* ($, e, next) {
     const result = yield* next(e)
     if (!e.agentId && result.answer) {
-      await update($, items, list => applyAnswer(list, result.answer)).catch(() => undefined)
+      try {
+        const woke = wake(await read($, items), await read($, dormant), result.answer)
+        await update($, items, () => woke.items)
+        await update($, dormant, () => woke.dormant)
+      } catch {
+        // An observer: the step goes on.
+      }
       // A step that went on to call tools: its text is mid-turn, which `final` hides.
       const text = normalize(result.answer)
       if (result.toolUses.length > 0 && text) await update($, mids, list => [...list, text].slice(-MID_KEPT)).catch(() => undefined)
@@ -406,6 +416,7 @@ export const register: Register = (on, options) => {
       const refused = (result.result as { success?: unknown } | undefined)?.success === false
       if (result.deny === undefined && !('isError' in result && result.isError) && !refused) {
         await update($, items, list => applyTask(list, e.tool, input, result.result)).catch(() => undefined)
+        await update($, dormant, () => []).catch(() => undefined)
       }
       return result
     }
@@ -427,7 +438,11 @@ export const register: Register = (on, options) => {
     const now = await $.clock.now()
     const id = e.agentId
     if (id) await update($, agents, list => finishAgent(list, id, now))
-    else await update($, turn, v => (v && v.end === undefined && !v.isDemo ? endTurn(v, e.reason, now, e.answer) : v))
+    else {
+      await update($, turn, v => (v && v.end === undefined && !v.isDemo ? endTurn(v, e.reason, now, e.answer) : v))
+      // A sleeping checklist the turn never wrote again is dropped.
+      await update($, dormant, () => [])
+    }
     await settle($)
     return result
   })

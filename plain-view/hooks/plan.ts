@@ -57,15 +57,22 @@ const isNotice = (text: string) => NOTICE.test(text.trimStart()) && requestOf(te
 /** The request's first line, for the card's title; none when the turn holds only a notification. */
 export const titleOf = (text: string) => firstLine(requestOf(text))
 
-/** A new turn: a fresh card, and the task list kept only while some task is still open. */
-export const startTurn = (prev: Turn | null, items: Item[], text: string, now: number, lang: Lang): { turn: Turn; items: Item[] } => {
+/**
+ * A new turn: a fresh card, and the task list kept only while some task is still open. A new
+ * request puts an open checklist read from the text to sleep (`dormant`): not drawn, it counts
+ * no call, and wakes only when an answer writes one of its tasks again (wake).
+ */
+export const startTurn = (prev: Turn | null, items: Item[], text: string, now: number, lang: Lang): { turn: Turn; items: Item[]; dormant: Item[] } => {
   // A notification keeps the last request's title, or says an agent finished.
   const title = titleOf(text) || prev?.title || (isNotice(text) ? WORDS[lang].agentDone : WORDS[lang].untitled)
   // A demo's sample list never carries into a real request.
   const open = !prev?.isDemo && items.some(i => i.status !== 'completed')
+  // A notification goes on with the request before it, so its checklist stays awake.
+  const isAsleep = open && !isNotice(text) && items.some(i => i.fromText)
   return {
     turn: { title, startedAt: now, calls: 0, changed: [], read: [] },
-    items: open ? items : [],
+    items: open && !isAsleep ? items : [],
+    dormant: isAsleep ? items : [],
   }
 }
 
@@ -238,6 +245,18 @@ export const applyAnswer = (items: Item[], answer: string): Item[] => {
     const n = list.find(x => sameTask(x.subject, o.subject))
     return n ? { ...o, status: n.status } : o
   })
+}
+
+/**
+ * The list after an answer, with the checklist the last request left asleep: a checklist that
+ * shares a task with it, while the turn has no list, wakes it (applyAnswer against it, so its
+ * calls and ticks carry); any other checklist is the list, and the sleeping one is dropped.
+ */
+export const wake = (items: Item[], dormant: Item[], answer: string): { items: Item[]; dormant: Item[] } => {
+  const list = checklistOf(answer)
+  if (!list || dormant.length === 0) return { items: applyAnswer(items, answer), dormant }
+  const isSame = items.length === 0 && list.some(n => dormant.some(o => sameTask(o.subject, n.subject)))
+  return { items: applyAnswer(isSame ? dormant : items, answer), dormant: [] }
 }
 
 /** The task list after a task tool's call: TaskCreate adds (with the id its result gave), TaskUpdate changes, TodoWrite replaces. */

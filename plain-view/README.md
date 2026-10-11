@@ -54,7 +54,10 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
     `- [x] Build the page`) is the list. A shorter checklist that names some of its tasks (the
     two steps it just finished) ticks them off and keeps the rest; one that shares no task is a
     new plan. A checklist the answer quotes (in a code block, fenced or indented, or a `>`
-    quote) is not read as the plan;
+    quote) is not read as the plan. A checklist left open does not carry into the next request:
+    it comes back, with the calls it counted, only when an answer there writes one of its tasks
+    again, and is gone when that request ends without it. A task tool's list stays until every
+    task is done;
   - before the agent writes a list: `Understand your request` and `Plan the steps`; with no
     list at all, the tool in flight;
   - the agents (subagents) the main turn starts, in one row: `◇ 1 agent running · code-review ·
