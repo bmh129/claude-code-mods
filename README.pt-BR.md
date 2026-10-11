@@ -2,6 +2,20 @@
 
 [English](README.md) | **Português (Brasil)**
 
+[![CI](https://github.com/ice-lfernandes/claude-code-mods/actions/workflows/ci.yml/badge.svg)](https://github.com/ice-lfernandes/claude-code-mods/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ice-lfernandes/claude-code-mods)](https://github.com/ice-lfernandes/claude-code-mods/releases/latest)
+[![Claude Code 2.1.287 ou mais recente](https://img.shields.io/badge/Claude%20Code-2.1.287%2B-d97757)](#instalação)
+[![License: MIT](https://img.shields.io/github/license/ice-lfernandes/claude-code-mods)](LICENSE)
+
+**Os limites do plano, o contexto e o que o agente está fazendo, logo acima do prompt.** Seis
+mods para o Claude Code, instalados de um único marketplace.
+
+![limits-meter: a faixa acima do prompt durante um pedido, o painel /limits e o toast numa troca cara para o opus](screenshots/limits-meter-demo.gif)
+
+O limits-meter durante um pedido, o painel `/limits` e uma troca cara perto do limite
+([mp4](screenshots/limits-meter-demo.mp4)). Desenhado a partir da saída real do mod por
+`scripts/screenshots/limits-meter-demo.sh`.
+
 Mods para o dia a dia no Claude Code. Um mod é um plugin do Claude Code feito de function hooks:
 ele pode desenhar uma faixa acima do prompt, um painel, uma entrada na status line ou um toast.
 Requer Claude Code 2.1.287 ou mais recente.
