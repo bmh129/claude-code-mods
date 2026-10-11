@@ -290,6 +290,25 @@ const pressVerb = async ($: EngineInterface, v: Verb) => {
   for (const line of linesOf(text)) $.ui.log(line)
 }
 
+/** A checklist in the agent's text becomes the plan, or wakes the one the last request left open. */
+const readChecklist = async ($: EngineInterface, text: string) => {
+  if (!text.trim()) return
+  try {
+    // The list is changed from its current value: the step's tools may have counted calls on it
+    // since the step began.
+    const sleeping = await read($, dormant)
+    let left = sleeping
+    await update($, items, list => {
+      const woke = wake(list, sleeping, text)
+      left = woke.dormant
+      return woke.items
+    })
+    if (left !== sleeping) await update($, dormant, () => left)
+  } catch {
+    // An observer: the step goes on.
+  }
+}
+
 /** True when a row of this tool, in this state, steps aside. */
 const hides = (tool: string, isErrored: boolean, isInterrupted: boolean) => isOn && !isErrored && !isInterrupted && !NEVER_HIDDEN.includes(tool)
 
@@ -381,16 +400,24 @@ export const register: Register = (on, options) => {
 
   // The agent's answer at the end of each step: a checklist in it becomes the plan, or wakes the
   // one the last request left open.
+  // A checklist is read as soon as the text before the step's first tool call is whole, so the
+  // calls that follow count toward the step it opens; the whole answer is read again at the end.
   on('turn.step', async function* ($, e, next) {
-    const result = yield* next(e)
-    if (!e.agentId && result.answer) {
-      try {
-        const woke = wake(await read($, items), await read($, dormant), result.answer)
-        await update($, items, () => woke.items)
-        await update($, dormant, () => woke.dormant)
-      } catch {
-        // An observer: the step goes on.
+    if (e.agentId) return yield* next(e)
+    const stream = next(e)
+    const texts: string[] = []
+    let isRead = false
+    for await (const chunk of stream) {
+      if (chunk.kind === 'text') texts[chunk.index] = (texts[chunk.index] ?? '') + chunk.text
+      else if (chunk.kind === 'tool' && !isRead) {
+        isRead = true
+        await readChecklist($, texts.join('\n'))
       }
+      yield chunk
+    }
+    const result = await stream.result
+    if (result.answer) {
+      await readChecklist($, result.answer)
       // A step that went on to call tools: its text is mid-turn, which `final` hides.
       const text = normalize(result.answer)
       if (result.toolUses.length > 0 && text) await update($, mids, list => [...list, text].slice(-MID_KEPT)).catch(() => undefined)
@@ -504,7 +531,10 @@ export const register: Register = (on, options) => {
     return <Box />
   })
 
+  // A group folds its calls into one count line, which would hide a failure: a group with a failed
+  // or interrupted call unfolds, and its rows go through the ToolUse hook above, one by one.
   on('ui.render', { component: 'ToolGroup' }, ($, e, next) => {
+    if (isOn && e.props.calls.some(c => c.isErrored || c.isInterrupted)) return next({ ...e, props: { ...e.props, isExpanded: true } })
     if (!e.props.calls.every(c => hides(c.tool, c.isErrored, c.isInterrupted))) return next(e)
     const { Box } = $.ui.resolve(e)
     return <Box />

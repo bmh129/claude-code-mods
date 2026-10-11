@@ -15,6 +15,8 @@ const show = (tree: unknown) => {
 type World = {
   answer: string
   toolUses: unknown[]
+  /** The chunks the step streams before its result, as the model's response arrives. */
+  chunks: unknown[]
   refused: string[]
   sets: { key: string; value: unknown }[]
   logs: string[]
@@ -37,7 +39,7 @@ type World = {
 /** The engine beneath the mod: options, turns and tools answered as a session would. */
 function engine(on: any, theme = 'dark'): World {
   const world: World = {
-    answer: '', toolUses: [], refused: [], sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }), listed: [], commands: [], ran: [],
+    answer: '', toolUses: [], chunks: [], refused: [], sets: [], logs: [], toasts: [], clock: mock.clock(on, { now: NOW }), listed: [], commands: [], ran: [],
     rows: [], deny: null, choice: null, asked: [], opened: [], closed: [], isPlaced: true,
   }
   let id = 0
@@ -59,6 +61,7 @@ function engine(on: any, theme = 'dark'): World {
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }) as never)
   on('turn.complete', () => ({ text: 'done' }) as never)
   on('turn.step', async function* ($: any, e: any) {
+    yield* world.chunks
     return { turnId: e.turnId, index: e.index, answer: world.answer, toolUses: world.toolUses, stopReason: world.toolUses.length ? 'tool_use' : 'end_turn' }
   } as never)
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine', scope: 'shared' }] }) as never)
@@ -84,7 +87,7 @@ function engine(on: any, theme = 'dark'): World {
   on('ui.render', ($: any, e: any) => {
     const { Box, Text } = $.ui.resolve(e)
     if (e.component === 'PromptHint') return Text({ children: `hint: ${e.props.hint}${e.props.tail ? ` | tail: ${e.props.tail}` : ''}` }) as never
-    return Box({ key: 'engine', children: Text({ children: 'engine row' }) }) as never
+    return Box({ key: 'engine', children: Text({ children: `engine row${e.props.isExpanded ? ' unfolded' : ''}` }) }) as never
   })
   return world
 }
@@ -236,6 +239,30 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await row($, 'ToolGroup', { calls, isActive: false, isExpanded: false }, surface)).not.toContain('engine row')
     expect(await row($, 'ToolGroup', { calls: [...calls, { ...calls[0], isErrored: true }], isActive: false, isExpanded: false }, surface)).toContain('engine row')
   })
+
+  test(`a group with a failed or interrupted call unfolds, so its failure draws, on ${surface}`, ON, async ($, on) => {
+    engine(on)
+    await start($, surface)
+    const ok = { tool: 'Read', input: {}, isRunning: false, isErrored: false, isInterrupted: false }
+    const group = (calls: unknown[]) => ({ calls, isActive: false, isExpanded: false })
+    expect(await row($, 'ToolGroup', group([ok, { ...ok, tool: 'Bash', isErrored: true }]), surface)).toContain('engine row unfolded')
+    expect(await row($, 'ToolGroup', group([{ ...ok, tool: 'Bash', isInterrupted: true }]), surface)).toContain('engine row unfolded')
+    // A group with no failure is not unfolded: it steps aside, or draws as the engine does.
+    expect(await row($, 'ToolGroup', group([ok, ok]), surface)).not.toContain('engine row')
+    expect(await row($, 'ToolGroup', group([ok, { ...ok, tool: 'Agent' }]), surface)).not.toContain('unfolded')
+    // The unfolded rows: the ones that worked step aside, the failed one draws.
+    expect(await row($, 'ToolUse', toolUse('Read'), surface)).not.toContain('engine row')
+    expect(await row($, 'ToolUse', toolUse('Bash', { isErrored: true, output: 'Exit code 254' }), surface)).toContain('engine row')
+  })
+
+  test(`with the mod off, a group with a failure draws as the engine does on ${surface}`, { options: { ...ON.options, enabled: false } }, async ($, on) => {
+    engine(on)
+    await start($, surface)
+    const failed = { tool: 'Bash', input: {}, isRunning: false, isErrored: true, isInterrupted: false }
+    const drawn = await row($, 'ToolGroup', { calls: [failed], isActive: false, isExpanded: false }, surface)
+    expect(drawn).toContain('engine row')
+    expect(drawn).not.toContain('unfolded')
+  })
 }
 
 test('tool falhou: the failed call counts in the turn and the card goes on', ON, async ($, on) => {
@@ -299,6 +326,47 @@ test('a checklist in the agent\'s answer becomes the plan when it keeps no task 
   drawn = await card($)
   expect(drawn).toContain('Ler a API')
   expect(drawn).not.toContain('Outra coisa')
+})
+
+test('a checklist is read when the text before the first tool call is whole, so that call counts toward its step', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await ask($)
+  // The engine runs the step's tools while the response streams: the Write starts before the step ends.
+  const text = `Plano:\n\n${checklist(1).split('\n').slice(0, 2).join('\n')}`
+  w.answer = `${checklist(1)}`
+  w.toolUses = [{ name: 'Write', input: { file_path: 'caprese.md' } }]
+  w.chunks = [
+    { kind: 'text', index: 0, text: text.slice(0, 9) },
+    { kind: 'text', index: 0, text: `${text.slice(9)}\n${checklist(1).split('\n').slice(2).join('\n')}` },
+    { kind: 'tool', index: 1, id: 'tu1', name: 'Write' },
+    { kind: 'input', index: 1, json: '{"file_path":"caprese.md"}' },
+  ]
+  const stream = $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 3 } as never)
+  const seen: string[] = []
+  for await (const chunk of stream) {
+    seen.push((chunk as { kind: string }).kind)
+    if ((chunk as { kind: string }).kind !== 'tool') continue
+    // The tool chunk came out with the checklist already read: step 2 is the current one.
+    await call($, 'Write', { file_path: 'caprese.md' })
+    const drawn = await card($)
+    expect(drawn).toContain('Passo 2 de 4')
+    expect(drawn).toContain('~25%')
+  }
+  // Every chunk passed on, in order; the end reads the same checklist again and changes nothing.
+  expect(seen).toEqual(['text', 'text', 'tool', 'input'])
+  const drawn = await card($)
+  expect(drawn).toContain('Passo 2 de 4')
+  expect(drawn).toContain('~25%')
+})
+
+test('a step with no tool call reads its checklist at the end, as before', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await ask($)
+  w.chunks = [{ kind: 'text', index: 0, text: checklist(0) }]
+  await step($, w, checklist(0))
+  expect(await card($)).toContain('Passo 1 de 4')
 })
 
 const RECIPES = ['Escolher 3 pratos', 'Escrever 3 receitas', 'Montar a lista de compras', 'Revisar']

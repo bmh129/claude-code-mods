@@ -28,7 +28,8 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
   switch in launchpad's panel (`◆ pad`). The hint line under the prompt ends in `plain view`
   while it is on.
 - **Tool rows:** a call that worked draws nothing, its result neither, and a folded run of reads
-  and searches neither. A failed or interrupted call draws in full, as Claude Code draws it.
+  and searches neither. A failed or interrupted call draws in full, as Claude Code draws it; in
+  a folded run, the run unfolds and only that call shows.
   The permission dialog, the agent's questions (`AskUserQuestion`), its plan (`ExitPlanMode`)
   and its helpers (`Agent`) are never touched.
 - **The agent's words** (`agentText`), while the mod is on:
@@ -51,9 +52,10 @@ Four short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
     `Next`, `Up next`. A list longer than 6 shows the 5 tasks around the current one, with a
     count of the rest;
   - with no task tool, the last checklist the agent writes in its answer (`1. [ ] Read the API`,
-    `- [x] Build the page`) is the list. A shorter checklist that names some of its tasks (the
-    two steps it just finished) ticks them off and keeps the rest; one that shares no task is a
-    new plan. A checklist the answer quotes (in a code block, fenced or indented, or a `>`
+    `- [x] Build the page`) is the list, read as soon as the text before the step's first tool
+    call is whole, so that call counts toward the step the checklist opens. A shorter checklist
+    that names some of its tasks (the two steps it just finished) ticks them off and keeps the
+    rest; one that shares no task is a new plan. A checklist the answer quotes (in a code block, fenced or indented, or a `>`
     quote) is not read as the plan. A checklist left open does not carry into the next request:
     it comes back, with the calls it counted, only when an answer there writes one of its tasks
     again, and is gone when that request ends without it. A task tool's list stays until every
