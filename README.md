@@ -199,7 +199,8 @@ Three options shape what you see, all in `/config`:
   `~/.claude/settings.json` hides it everywhere, ctrl+o included.
 - `askForTasks` (on by default): one line in the system prompt asks the model to keep a task
   list for work of more than two steps, or a checklist in its reply when the session has no task
-  tool, so the card shows each step; a few tokens per request.
+  tool, so the card shows each step; a few tokens per request. When a checklist in the text stops
+  moving, the card says `list not updated` and the model gets a short reminder with a tool result.
   Off, the card reads the list the agent keeps on its own, or a checklist in its answer.
 - `request`, how much of a request of several lines the card's title shows: `line` (default: the
   first line and `+5 lines`), `joined`, `auto` (the first line of prose) or `all`. The card's

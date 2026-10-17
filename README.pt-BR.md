@@ -202,7 +202,8 @@ Três opções mudam o que você vê, todas em `/config`:
 - `askForTasks` (ligada por padrão): uma linha no system prompt pede ao modelo que mantenha uma
   lista de tarefas em trabalho de mais de dois passos, ou um checklist na resposta quando a sessão
   não tem tool de tarefas, para o cartão mostrar cada passo; custa
-  alguns tokens por pedido. Desligada, o cartão lê a lista que o agente mantém sozinho, ou um
+  alguns tokens por pedido. Quando um checklist no texto para de andar, o cartão diz
+  `lista parada` e o modelo recebe um lembrete curto junto de um resultado de tool. Desligada, o cartão lê a lista que o agente mantém sozinho, ou um
   checklist na resposta.
 - `request`, quanto de um pedido de várias linhas o título do cartão mostra: `line` (padrão: a
   primeira linha e `+5 linhas`), `joined`, `auto` (a primeira linha de texto corrido) ou `all`. O

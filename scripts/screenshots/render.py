@@ -256,7 +256,7 @@ open(f'{out}/launchpad.svg', 'w').write(svg([
 
 # plain-view
 d = load(f'{snap}/plain-view.txt')
-work, done, multi, waiting = (trim(tree(b)) for b in d['BAND'][:4])
+work, done, multi, waiting, stale = (trim(tree(b)) for b in d['BAND'][:5])
 pw = max(width(l) for l in work) - 2
 prompt = [plain('─' * (pw - 12) + ' plain view ─', dimColor=True), plain('> ')]
 open(f'{out}/plain-view.svg', 'w').write(svg([
@@ -264,6 +264,7 @@ open(f'{out}/plain-view.svg', 'w').write(svg([
     ('when the turn ends', 'raw', done),
     ('a request of several lines: its first line, the count and the button that unfolds it', 'raw', multi),
     ('no task list, the turn over, a background agent still running', 'raw', waiting),
+    ('a checklist the agent wrote once and never again: the card says the list stopped', 'raw', stale),
     ('/plain-view palette', 'raw', trim(tree(d['TREE'][0]))),
     ('/plain-view: the settings pane, Transcript tab', 'pane:plain-view', wrapped(d['PANE'][0], cw - 4)),
     ('the Card tab: palettes with a sample, and a preview', 'pane:plain-view', wrapped(d['PANE'][1], cw - 4)),
