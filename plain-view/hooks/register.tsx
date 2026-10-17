@@ -50,9 +50,11 @@ import {
   applyTask,
   cardOf,
   countCall,
+  currentOf,
   demoOf,
   endTurn,
   finishAgent,
+  isNudgeDue,
   keepAgents,
   LIST_MS,
   MID_KEPT,
@@ -464,9 +466,15 @@ export const register: Register = (on, options) => {
     if (!t || t.end !== undefined || t.isDemo) return next(e)
     await update($, turn, v => (v ? touch(v, e.tool, input, lang, null) : v))
     await update($, items, countCall)
+    // With askForTasks, a text list that stopped moving: the model is reminded after this call's
+    // result, once it is known to have worked (the reminder rides on a result, never on a refusal).
+    const list = await read($, items)
+    const at = currentOf(list)
+    const nudge = isOn && askForTasks && isNudgeDue(list, at) ? WORDS.en.nudge(list[at]!.calls) : null
     const result = await next(e)
     const ok = result.deny === undefined && !('isError' in result && result.isError)
     await update($, turn, v => (v ? touch(v, e.tool, input, lang, ok) : v)).catch(() => undefined)
+    if (nudge && ok && 'result' in result) return { ...result, context: [...(result.context ?? []), nudge] }
     return result
     // An observer: fail open. After next(e) nothing throws, so the call never runs twice.
   }).catch(($, e, next) => next(e))

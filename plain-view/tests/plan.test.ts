@@ -14,6 +14,8 @@ import {
   finishAgent,
   firstSentence,
   GONE_MS,
+  isNudgeDue,
+  isStale,
   keepAgents,
   reconcileAgents,
   runningOf,
@@ -26,6 +28,7 @@ import {
   estimate,
   MAX_ESTIMATE,
   spawnAgent,
+  staleAfter,
   startTurn,
   titleOf,
   requestLinesOf,
@@ -786,4 +789,101 @@ test('review: a continuation (no text) keeps the request, its lines and its open
   expect(next.dormant).toEqual([])
   // A typed request still puts it to sleep.
   expect(startTurn(t, items, 'Outra coisa', 5, 'pt-BR').dormant).toEqual(items)
+})
+
+// 0.1.9, issue #27: a text list that stops moving.
+/** A text checklist of five steps, the current one with `calls` calls; earlier ones done with `done` calls each. */
+const TEXT = ['Ler o código', 'Escrever a regra', 'Ligar no executor', 'Atualizar os testes', 'Rodar npm test']
+const listed = (doneCalls: number[], calls: number, fromText = true): Item[] =>
+  TEXT.map((subject, i) => ({
+    subject,
+    status: i < doneCalls.length ? 'completed' : 'pending',
+    calls: i < doneCalls.length ? doneCalls[i]! : i === doneCalls.length ? calls : 0,
+    ...(fromText ? { fromText: true } : {}),
+  }))
+
+test('a text list is stale past three times the average of the finished steps, 12 calls before any', () => {
+  expect(staleAfter(listed([], 0))).toBe(12)
+  expect(isStale(listed([], 12), 0)).toBe(false)
+  expect(isStale(listed([], 13), 0)).toBe(true)
+  // Two finished steps of 4 and 6 calls: the average is 5, so the limit is 15.
+  expect(staleAfter(listed([4, 6], 0))).toBe(15)
+  expect(isStale(listed([4, 6], 15), 2)).toBe(false)
+  expect(isStale(listed([4, 6], 16), 2)).toBe(true)
+})
+
+test('a task tool\'s list is never called stale, however long the step runs', () => {
+  expect(isStale(listed([], 40, false), 0)).toBe(false)
+  expect(isStale(listed([], 40), 9)).toBe(false)
+})
+
+test('a step that went stale stays out of the average, so the next step is not judged by it', () => {
+  // Step 1 took 14 calls and was ticked at last. Step 2 is measured against the default (4), not 14.
+  const items = listed([14], 5)
+  expect(staleAfter(items)).toBe(12)
+  expect(Math.round(estimate(items, 1) * 100)).toBe(95)
+  // A long step below the stale line still counts: 11 calls and 5 calls average 8.
+  expect(staleAfter(listed([11, 5], 0))).toBe(24)
+})
+
+test('the reminder is due on the call that crosses the limit, then every ten, three times at most', () => {
+  const due = (calls: number) => isNudgeDue(listed([], calls), 0)
+  const calls = Array.from({ length: 60 }, (_, i) => i).filter(due)
+  expect(calls).toEqual([13, 23, 33])
+  expect(isNudgeDue(listed([], 40, false), 0)).toBe(false)
+  expect(isNudgeDue(listed([], 13), -1)).toBe(false)
+})
+
+test('a stale text list: the card drops the guess, says so, and counts only the finished steps', () => {
+  const turn = fresh().turn
+  const live = cardOf(turn, listed([], 8), NOW, 'en')!
+  if (live.kind !== 'plan') throw new Error('plan card expected')
+  expect(live.rows[0]!.status).toBe('~95%')
+  expect(live.notice).toBeUndefined()
+  expect(live.pct).toBe('19%')
+
+  const stale = cardOf(turn, listed([], 14), NOW, 'en')!
+  if (stale.kind !== 'plan') throw new Error('plan card expected')
+  expect(stale.notice).toBe('list not updated')
+  expect(stale.rows[0]).toMatchObject({ kind: 'now', frac: 0, status: 'list not updated for 14 calls' })
+  expect(stale.pct).toBe('0%')
+  expect(stale.label).toBe('Step 1 of 5')
+
+  const pt = cardOf(turn, listed([4], 40), NOW, 'pt-BR')!
+  if (pt.kind !== 'plan') throw new Error('plan card expected')
+  expect(pt.notice).toBe('lista parada')
+  expect(pt.rows.find(r => r.kind === 'now')!.status).toBe('lista parada há 40 calls')
+  // One step finished: the bar stands at 1 of 5.
+  expect(pt.pct).toBe('20%')
+})
+
+test('a stale list says nothing once the turn is over, and none for a task tool\'s list', () => {
+  const done = cardOf(endTurn(fresh().turn, 'answer', NOW), listed([], 14), NOW, 'en')!
+  expect(done.kind === 'plan' && done.notice).toBeFalsy()
+  const tools = cardOf(fresh().turn, listed([], 14, false), NOW, 'en')!
+  expect(tools.kind === 'plan' && tools.notice).toBeFalsy()
+  expect(tools.kind === 'plan' && tools.rows[0]!.status).toBe('~95%')
+})
+
+test('one ticked line closes its step once a text list is open, and a lone line never replaces the list', () => {
+  const open = countCall(applyAnswer([], TEXT.map(t => `- [ ] ${t}`).join('\n')))
+  expect(checklistOf('- [x] Ler o código')).toBeNull()
+  expect(checklistOf('- [x] Ler o código', 1)).toHaveLength(1)
+  const ticked = applyAnswer(open, 'Feito.\n\n- [x] Ler o código')
+  expect(ticked.map(i => i.status)).toEqual(['completed', 'pending', 'pending', 'pending', 'pending'])
+  expect(ticked[0]!.calls).toBe(1)
+  expect(currentOf(ticked)).toBe(1)
+  // Markdown marks and case do not matter, as for a whole list.
+  expect(applyAnswer(open, '- [x] **ler o código**')[0]!.status).toBe('completed')
+  // A line that names no task of the list changes nothing; nor does one with no list open.
+  expect(applyAnswer(open, '- [x] Outra coisa')).toBe(open)
+  expect(applyAnswer([], '- [x] Ler o código')).toEqual([])
+  // A task tool's list ignores the text, as before.
+  const tools = listed([], 3, false)
+  expect(applyAnswer(tools, '- [x] Ler o código')).toBe(tools)
+})
+
+test('a sleeping checklist wakes only on a whole list, not on a lone line', () => {
+  const asleep = listed([], 3)
+  expect(wake([], asleep, '- [x] Ler o código')).toEqual({ items: [], dormant: asleep })
 })

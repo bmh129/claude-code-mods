@@ -11,6 +11,10 @@ test('snap', { options: { enabled: true, language: 'en', icons: 'symbol' } }, as
   on('turn.start', ($: any, e: any) => ({ turnId: e.turnId }) as never)
   on('turn.complete', () => ({ text: 'done' }) as never)
   on('tool.call', ($: any, e: any) => (e.tool === 'TaskCreate' ? { result: { task: { id: String(++id) } }, text: 'ok' } : { result: 'ok', text: 'ok' }) as never)
+  let answer = ''
+  on('turn.step', async function* ($: any, e: any) {
+    return { turnId: e.turnId, index: e.index, answer, toolUses: [], stopReason: 'end_turn' }
+  } as never)
   on('ui.render', ($, e) => $.ui.resolve(e).Box({ key: 'engine' }) as never)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }) as never)
   on('agent.list', () => ({ value: [{ id: 'a1', description: 'code-review', type: 'general-purpose', status: 'running' }] }) as never)
@@ -48,6 +52,15 @@ test('snap', { options: { enabled: true, language: 'en', icons: 'symbol' } }, as
   now += 30_000
   await $.turn.complete({ answer: 'ok', durationMs: 30_000, isAborted: false, turnId: 't2', reason: 'answer' } as never)
   now += 162_000
+  await band()
+  // A checklist the agent wrote once and never again: 14 calls on, the card says the list stopped.
+  await $.turn.start({ text: 'Add caching to the executor', turnId: 't4' } as never)
+  answer = ['Read the code', 'Write the cache rule', 'Wire it into the executor', 'Update the tests', 'Run npm test'].map((t, i) => `${i + 1}. [ ] ${t}`).join('\n')
+  for await (const _ of $.turn.step({ turnId: 't4', index: 0, model: 'claude-opus-5-5', messageCount: 3 } as never)) {
+    // drain
+  }
+  for (let i = 0; i < 14; i++) await $.tool.call({ tool: 'Read', file_path: `/repo/src/f${i}.ts` } as never)
+  now += 6 * 60_000
   await band()
   const out = await $.ui.mount({ plugin: 'plain-view', surface: 'terminal', component: 'CommandOutput', props: { command: 'plain-view', args: 'palette', text: '', isErrored: false }, viewport: { columns: 110, rows: 40 } } as never)
   console.log('TREE', JSON.stringify(await out.drawn()))

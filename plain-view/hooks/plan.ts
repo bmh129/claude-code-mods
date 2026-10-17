@@ -216,11 +216,11 @@ const closes = (line: string, fence: Fence) => {
 
 /**
  * A checklist the agent wrote in its answer (`1. [ ] Ler a API`, `- [x] Montar o painel`), as a
- * task list: `[x]` done, `[~]` `[>]` `[-]` in progress, `[ ]` pending. Null under two items.
+ * task list: `[x]` done, `[~]` `[>]` `[-]` in progress, `[ ]` pending. Null under `min` items.
  * A checklist the answer quotes is not the plan: one in a fenced code block (an unclosed fence
  * runs to the end), a blockquote, or an indented code block.
  */
-export const checklistOf = (text: string): Item[] | null => {
+export const checklistOf = (text: string, min = 2): Item[] | null => {
   // The last run of checklist lines: blank lines may sit inside it, other text ends it.
   let items: Item[] = []
   let isOpen = false
@@ -257,7 +257,7 @@ export const checklistOf = (text: string): Item[] | null => {
     const mark = m[1]!.toLowerCase()
     items.push({ subject, status: mark === 'x' ? 'completed' : mark === ' ' ? 'pending' : 'in_progress', calls: 0, fromText: true })
   }
-  return items.length >= 2 ? items : null
+  return items.length >= min ? items : null
 }
 
 /** Whether two task subjects name the same task: equal once markdown, spaces and case are gone. */
@@ -267,12 +267,15 @@ const sameTask = (a: string, b: string) => normalize(a).toLowerCase() === normal
  * The list after an answer of the agent, unless a task tool keeps the list. A checklist shorter
  * than the list that names some of its tasks ticks them off and keeps the rest (the agent listed
  * what it just did); a checklist as long or longer, or one that shares no task, is the list now.
+ * Once a text list is open, one line is enough to tick its task (`- [x] Ler a API`), but only a
+ * line that names a task of the list: a lone line never replaces the list.
  */
 export const applyAnswer = (items: Item[], answer: string): Item[] => {
   if (items.some(i => !i.fromText)) return items
-  const list = checklistOf(answer)
+  const list = checklistOf(answer, items.length > 0 ? 1 : 2)
   if (!list) return items
   const isPart = list.length < items.length && list.some(n => items.some(o => sameTask(o.subject, n.subject)))
+  if (list.length === 1 && !isPart) return items
   if (!isPart) return keepCalls(items, list)
   return items.map(o => {
     const n = list.find(x => sameTask(x.subject, o.subject))
@@ -480,9 +483,46 @@ export const showsBlock = (mode: AgentText, text: string, mids: ReadonlySet<stri
 export const estimate = (items: readonly Item[], at: number): number => {
   const item = items[at]
   if (!item) return 0
-  const finished = items.filter(i => i.status === 'completed' && i.calls > 0)
-  const average = finished.length ? finished.reduce((n, i) => n + i.calls, 0) / finished.length : DEFAULT_CALLS
-  return Math.min(MAX_ESTIMATE, item.calls / Math.max(1, average))
+  return Math.min(MAX_ESTIMATE, item.calls / Math.max(1, averageCalls(items)))
+}
+
+/** A text list is stale when its step has made this many times the average of the finished steps. */
+export const STALE_FACTOR = 3
+
+/** Calls between two reminders to the model, and the most it gets for one step. */
+export const NUDGE_EVERY = 10
+export const NUDGE_MAX = 3
+
+/**
+ * The average tool calls of the finished steps (DEFAULT_CALLS before any). A step that went
+ * stale stays out of it: its calls were not progress, and would make the next step look slow.
+ */
+const averageCalls = (items: readonly Item[]): number => {
+  const finished = items.filter(i => i.status === 'completed' && i.calls > 0 && i.calls <= STALE_FACTOR * DEFAULT_CALLS)
+  return finished.length ? finished.reduce((n, i) => n + i.calls, 0) / finished.length : DEFAULT_CALLS
+}
+
+/** The calls a step may make before its list counts as stale. */
+export const staleAfter = (items: readonly Item[]): number => Math.ceil(STALE_FACTOR * averageCalls(items))
+
+/**
+ * Whether the list of the current step has gone stale: it came from the agent's text, and the
+ * step has made far more calls than the finished ones, so the agent most likely stopped writing
+ * the checklist. A task tool's list is the agent's own marking, so it is never called stale.
+ */
+export const isStale = (items: readonly Item[], at: number): boolean => {
+  const item = items[at]
+  return item?.fromText === true && item.calls > staleAfter(items)
+}
+
+/**
+ * Whether the call that just made the step's count what it is should carry a reminder: the call
+ * that crosses the limit, then every NUDGE_EVERY calls, NUDGE_MAX times at most per step.
+ */
+export const isNudgeDue = (items: readonly Item[], at: number): boolean => {
+  if (!isStale(items, at)) return false
+  const past = items[at]!.calls - staleAfter(items) - 1
+  return past % NUDGE_EVERY === 0 && past / NUDGE_EVERY < NUDGE_MAX
 }
 
 /** What a task row shows: done, the one now, the next one, later ones, or the one a stop left. */
@@ -501,6 +541,8 @@ export type Card =
       label: string
       frac: number
       pct: string
+      /** `lista parada`, next to the figure: the text list stopped moving, so the bar counts only finished steps. */
+      notice?: string
       rows: Row[]
       /** `✓ mais 3 feitos` above a long plan's window, `○ mais 2 depois` below it. */
       before?: string
@@ -626,7 +668,9 @@ export const cardOf = (
   const at = currentOf(items)
   const state = turn.end === undefined ? 'work' : turn.end === 'answer' ? 'done' : 'stopped'
   const est = state === 'work' && at >= 0 ? estimate(items, at) : 0
-  const frac = (completed + est) / total
+  // A text list that stopped moving: the step's guess is gone (its calls were not progress).
+  const stale = state === 'work' && at >= 0 && isStale(items, at)
+  const frac = (completed + (stale ? 0 : est)) / total
   const { start, end } = windowAround(total, at < 0 ? total - 1 : at)
 
   const rows: Row[] = items.slice(start, end).map((it, j) => {
@@ -636,6 +680,7 @@ export const cardOf = (
       if (state === 'stopped') return { kind: 'halted', text: it.subject, frac: Math.max(0.05, estimate(items, i)), status: w.halted }
       // The turn answered with this task open: it waits, nothing stopped it.
       if (state === 'done') return { kind: 'later', text: it.subject, frac: 0, status: w.leftOpen }
+      if (stale) return { kind: 'now', text: it.subject, frac: 0, status: w.staleFor(it.calls), doing: turn.doing }
       return { kind: 'now', text: it.subject, frac: est, status: `~${Math.round(est * 100)}%`, doing: turn.doing }
     }
     return { kind: i === at + 1 ? 'next' : 'later', text: it.subject, frac: 0, status: i === at + 1 ? w.next : w.later }
@@ -657,6 +702,7 @@ export const cardOf = (
     label: state === 'done' && completed === total ? w.steps(total, total) : w.step(Math.min(total, (at < 0 ? total - 1 : at) + 1), total),
     frac,
     pct: pct(frac),
+    ...(stale ? { notice: w.stale } : {}),
     rows,
     ...(before ? { before } : {}),
     ...(after ? { after } : {}),

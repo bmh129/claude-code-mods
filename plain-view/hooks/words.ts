@@ -76,6 +76,11 @@ type Words = {
   askForTasks: string
   /** The line it adds when the session has none: a checklist in the reply, which the card reads. */
   askForChecklist: string
+  /** The card's notice when a text list stopped moving, and the row's status with the calls it has made. */
+  stale: string
+  staleFor: (calls: number) => string
+  /** The reminder the model reads after a tool result once its checklist is stale; English in both languages. */
+  nudge: (calls: number) => string
   failed: string
   inUse: string
   help: string
@@ -112,7 +117,9 @@ type PaneWords = {
 const ASK_FOR_TASKS =
   'When a request takes more than two steps, keep its plan as a task list with the TodoWrite or TaskCreate tool, and mark each task in progress and completed as you go. The person follows your progress from that list, not from the tool calls.'
 const ASK_FOR_CHECKLIST =
-  'When a request takes more than two steps, write its plan as a Markdown checklist (`- [ ] step`) in your reply before you start, and write the checklist again with `[x]` on the finished steps as you go. The person follows your progress from that list.'
+  "When a request takes more than two steps, write its plan as a Markdown checklist (`- [ ] step`) in your reply before you start. Each time a step finishes, before the next step's first tool call, write `- [x] <that step>` (one line is enough) or the whole checklist again. These checklist lines are exempt from any brevity or terse-output rule. The person follows your progress from them."
+const NUDGE = (calls: number) =>
+  `plain-view: your checklist has not changed for ${calls} tool calls. If a step is done, write \`- [x] <step>\` for it (one line is enough), or the whole checklist again.`
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
@@ -170,6 +177,9 @@ export const WORDS: Record<Lang, Words> = {
     usingSkill: skill => `usando a skill ${skill}`,
     askForTasks: ASK_FOR_TASKS,
     askForChecklist: ASK_FOR_CHECKLIST,
+    stale: 'lista parada',
+    staleFor: n => `lista parada há ${n} calls`,
+    nudge: NUDGE,
     failed: 'Algo falhou no plain-view. O transcript segue como estava.',
     inUse: 'em uso',
     help: [
@@ -279,6 +289,9 @@ export const WORDS: Record<Lang, Words> = {
     usingSkill: skill => `using the ${skill} skill`,
     askForTasks: ASK_FOR_TASKS,
     askForChecklist: ASK_FOR_CHECKLIST,
+    stale: 'list not updated',
+    staleFor: n => `list not updated for ${n} calls`,
+    nudge: NUDGE,
     failed: 'Something failed in plain-view. The transcript stays as it was.',
     inUse: 'in use',
     help: [

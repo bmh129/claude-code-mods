@@ -1241,3 +1241,128 @@ test('request all: every line under the title, pasted code as one line', { optio
   expect(drawn).not.toContain('TypeError')
   expect(drawn).not.toContain('ver pedido')
 })
+
+// 0.1.9, issue #27: the agent writes its checklist once and then only prose.
+/** A request whose checklist (all open) came in the first step, then `n` Read calls, each one's result in order. */
+const prose = async ($: any, w: World, n: number) => {
+  await ask($, 'Coloque cache no executor')
+  await step($, w, checklist(0))
+  const results: any[] = []
+  for (let i = 0; i < n; i++) results.push(await call($, 'Read', { file_path: `/repo/f${i}.ts` }))
+  return results
+}
+
+test('a text list that stops moving: the card says so instead of ~95%, and the model is reminded', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  const before = await prose($, w, 12)
+  // Up to 12 calls (three times the default): the guess stands and no reminder goes.
+  let drawn = await card($)
+  expect(drawn).toContain('~95%')
+  expect(drawn).not.toContain('lista parada')
+  expect(before.every(r => r.context === undefined)).toBe(true)
+
+  const crossing = await call($, 'Read', { file_path: '/repo/f12.ts' })
+  expect(crossing.context).toHaveLength(1)
+  expect(crossing.context[0]).toContain('plain-view: your checklist has not changed for 13 tool calls')
+  expect(crossing.context[0]).toContain('`- [x] <step>`')
+  // The result itself is the tool's own.
+  expect(crossing.result).toBe('ok')
+  drawn = await card($)
+  expect(drawn).toContain('lista parada há 13 calls')
+  expect(drawn).toContain(' · lista parada')
+  expect(drawn).not.toContain('~95%')
+  expect(drawn).toContain('Passo 1 de 4')
+
+  // Then silence for nine calls, and the second reminder on the tenth.
+  for (let i = 0; i < 9; i++) expect((await call($, 'Read', { file_path: `/repo/g${i}.ts` })).context).toBeUndefined()
+  expect((await call($, 'Read', { file_path: '/repo/h.ts' })).context[0]).toContain('for 23 tool calls')
+})
+
+test('the reminder goes in English and the card in the language of the mod', { options: { enabled: true, language: 'en', icons: 'symbol' } }, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await prose($, w, 12)
+  const crossing = await call($, 'Read', { file_path: '/repo/x.ts' })
+  expect(crossing.context[0]).toContain('your checklist has not changed')
+  expect(await card($)).toContain('list not updated for 13 calls')
+})
+
+test('no reminder when askForTasks is off, though the card still tells the truth', { options: { ...ON.options, askForTasks: false } }, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  const results = await prose($, w, 14)
+  expect(results.every(r => r.context === undefined)).toBe(true)
+  // The card still tells the truth: it asks nothing of the model.
+  expect(await card($)).toContain('lista parada')
+})
+
+test('a failed call at the limit carries no reminder, and the next due one does', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await prose($, w, 12)
+  const failed = await call($, 'Bash', { command: 'npm test' })
+  expect(failed.isError).toBe(true)
+  expect(failed.context).toBeUndefined()
+  for (let i = 0; i < 9; i++) await call($, 'Read', { file_path: `/repo/g${i}.ts` })
+  expect((await call($, 'Read', { file_path: '/repo/h.ts' })).context).toHaveLength(1)
+})
+
+test('a task tool\'s list is not stale however long the step runs, and gets no reminder of ours', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  await ask($)
+  for (const subject of TASKS) await call($, 'TaskCreate', { subject, description: subject })
+  await call($, 'TaskUpdate', { taskId: '1', status: 'in_progress' })
+  for (let i = 0; i < 30; i++) expect((await call($, 'Read', { file_path: `/repo/f${i}.ts` })).context).toBeUndefined()
+  const drawn = await card($)
+  expect(drawn).toContain('~95%')
+  expect(drawn).not.toContain('lista parada')
+})
+
+test('one ticked line brings a stale card back: step 2 opens and the guess starts again', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await prose($, w, 13)
+  expect(await card($)).toContain('lista parada')
+  await step($, w, `- [x] ${RECIPES[0]}`)
+  let drawn = await card($)
+  expect(drawn).toContain('Passo 2 de 4')
+  expect(drawn).not.toContain('lista parada')
+  expect(drawn).toContain('~0%')
+  // The calls that follow count toward step 2.
+  await call($, 'Read', { file_path: '/repo/a.ts' })
+  await call($, 'Read', { file_path: '/repo/b.ts' })
+  drawn = await card($)
+  expect(drawn).toContain('Passo 2 de 4')
+  expect(drawn).toContain('~50%')
+})
+
+test('a lone checklist line before any list is not a plan', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await ask($)
+  await step($, w, `- [x] ${RECIPES[0]}`)
+  const drawn = await card($)
+  expect(drawn).toContain('Entender o pedido')
+  expect(drawn).not.toContain(RECIPES[0]!)
+})
+
+test('80 columns: the stale card fits', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await prose($, w, 30)
+  const drawn = await card($, 'terminal', 80)
+  expect(drawn).toContain('lista parada')
+  expect(drawn).toContain('"columns":10')
+})
+
+test('askForTasks with no task tool: the line frees the checklist from terse-output rules', ON, async ($, on) => {
+  engine(on)
+  await start($)
+  const result: any = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: ['Bash'], outputStyle: null, traits: [] } as never)
+  const text: string = result.sections[1].text
+  expect(text).toContain('Each time a step finishes, before the next step\'s first tool call')
+  expect(text).toContain('`- [x] <that step>` (one line is enough)')
+  expect(text).toContain('exempt from any brevity or terse-output rule')
+})

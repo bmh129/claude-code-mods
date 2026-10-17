@@ -295,7 +295,10 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
           <Text dimColor>{clip(card.label, L.label).padEnd(L.label)}</Text>
           {bar('total', L.bar, card.frac, pal === 'off' ? 'off' : pal)}
         </Box>
-        <Text bold color={tone(card.state)}>{card.pct}</Text>
+        <Text>
+          <Text bold color={tone(card.state)}>{card.pct}</Text>
+          {card.notice !== undefined ? <Text color="warning">{` · ${card.notice}`}</Text> : null}
+        </Text>
       </Box>
       {card.before !== undefined && <Text dimColor>{`  ${card.before}`}</Text>}
       {card.rows.map(row)}

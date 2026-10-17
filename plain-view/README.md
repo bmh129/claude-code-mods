@@ -86,9 +86,24 @@ Five short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
   in a live test it wrote its plan as a checklist in its answer. While the mod is on, one line in
   the system prompt asks it to keep one with `TodoWrite` or `TaskCreate` for work of more than two
   steps, or, when the session has neither tool, to write a Markdown checklist (`- [ ] step`) in
-  its reply and write it again as steps finish, so the card shows each step. It costs a few tokens per request, and the model may not
-  always follow it. Turn it off in `/config`; the card then reads the list the agent keeps on its
-  own, or its checklist.
+  its reply and, each time a step finishes and before the next step's first tool call, write
+  `- [x] <that step>` (one line is enough) or the whole checklist again, a line the agent should keep
+  even under a terse output style. That costs a few tokens per request, and the model may not
+  always follow it: when a text list has not moved for far longer than its steps usually take,
+  the card says so (see **A list that stops moving**) and the mod adds a short reminder to the
+  next tool results. Turn it off in `/config`; the card then reads the list the agent keeps on
+  its own, or its checklist.
+- **A list that stops moving:** a checklist read from the agent's text moves only when the agent
+  writes it again. When the current step has made more than three times the calls of the finished
+  steps (12 before any is done), the card stops guessing: the step's row reads `list not updated
+  for 14 calls` instead of `~95%`, `list not updated` sits next to the figure, and the request's
+  bar counts only the finished steps. One line, `- [x] Build the page`, is enough to tick a task
+  of an open text list and bring the card back; a lone line that names no task of the list is
+  ignored. The steps that went stale stay out of the average. A task tool's list is never called
+  stale: it is the agent's own marking. With `askForTasks` on, the mod also adds one reminder
+  (`plain-view: your checklist has not changed for 13 tool calls. ...`) to the result of the
+  call that crosses the limit, then every ten calls, three times at most per step. The model
+  reads it; you do not see it, and the tool's result is unchanged.
 - **The estimate:** the current step's percentage compares its tool calls with the average of
   the steps already done (4 calls before any), and stops at 95% until the task is marked done.
   It is a guess, hence the `~`. The request's bar counts done steps plus that estimate.
@@ -182,7 +197,7 @@ time) and their end from `turn.complete`; while one runs it asks `$.agent.list()
 Its `agent.spawn` hook only observes: the spawn goes on whatever happens after it. That hook passes every response through unchanged. With `askForTasks` on (the
 default), its `prompt.compose` hook adds one line to the system prompt while the mod is on. Under
 `agentText` it hides the agent's messages from the drawing only; the session keeps them. Its `tool.call` hook only observes: if it fails, the call goes on, and
-nothing after the call can make it run twice. The only thing it writes is its own options
+nothing after the call can make it run twice. Its one addition is the reminder above, handed to the model with the result of a call that worked (never with a refusal or an error), only with `askForTasks` on. The only thing it writes is its own options
 through `$.config.set`, when you run `on`, `off` or `palette`, or press a value or `defaults`
 in the settings pane (`defaults` asks first, in the engine's own question dialog). It keeps
 its values in the session's plugin state and nothing across sessions.
