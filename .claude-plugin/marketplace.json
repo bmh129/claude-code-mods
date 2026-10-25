@@ -8,7 +8,7 @@
     {
       "name": "limits-meter",
       "source": "./limits-meter",
-      "description": "Plan limits and context above the prompt: model and effort, 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn, and a toast on a costly model switch near the limit"
+      "description": "Plan limits, cache clock and context above the prompt: model and effort, 5-hour and weekly windows with reset times, a countdown of the prompt cache with an opt-in keep-warm that spends plan, context split by group (system, MCP, messages), tokens per turn, and a toast on a costly model switch near the limit"
     },
     {
       "name": "allowlist-coach",

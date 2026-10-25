@@ -22,7 +22,7 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 
 | Mod | Command | What it does |
 | --- | --- | --- |
-| [limits-meter](limits-meter/) | `/limits` | Plan limits and context above the prompt: model and effort, 5-hour and weekly windows with reset times, context fill, cache hit rate, tokens per turn, and a toast on a costly model switch near the limit |
+| [limits-meter](limits-meter/) | `/limits` | Plan limits, cache clock and context above the prompt: model and effort, 5-hour and weekly windows with reset times, a countdown of the prompt cache with an opt-in keep-warm that spends plan, context split by group (system, MCP, messages), tokens per turn, and a toast on a costly model switch near the limit |
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Counts permission dialogs per rule; after 5 approvals with no refusal, offers to add the rule to `permissions.allow`, asking before it writes |
 | [agent-watch](agent-watch/) | `/watch` | Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish |
 | [test-hud](test-hud/) | `/test-hud` | Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green |
@@ -42,6 +42,7 @@ The band shows on its own after the first response. Commands:
 /limits          open the pane: plan windows, context in tokens, the last 20 turns
 /limits hide     hide the band above the prompt, in later sessions too
 /limits show     bring the band back
+/limits keep-warm on|off  keep the prompt cache warm (asks first, spends plan)
 /limits warn N   warn on a costly switch with the 5-hour window from N% (default 70)
 /limits help     list the commands
 ```
@@ -52,6 +53,16 @@ prompt and runs nothing. `details` on the band opens the pane. The pane also say
 reaches 100% at the current pace, before it resets, and draws the context fill turn by turn.
 A switch to a bigger model (haiku < sonnet < opus < fable) or to effort `max` with the 5-hour
 window at 70% or more shows one toast with the minutes left at the pace of the last 3 turns.
+
+The `cache` cell counts down the prompt cache (`⏱ 52:10`), turns to the warning color in its last
+10 minutes (the last minute of a 5-minute cache) and to `❄ cold` once it lapses, with one toast.
+It needs the cache TTL, which the engine gives on a model switch and which the mod otherwise
+reads from a one-request turn after a pause; until it knows, the cell keeps the last turn's hit
+rate. `keep warm` (or `/limits keep-warm on`) asks first, then sends one short message just
+before the cache goes cold, a real turn drawn as one dim row. It stops at your next prompt or
+after 2 hours. It spends plan: that is the only way this mod calls a model, and only when you
+turn it on. The context bar is split by the engine's categories (system, MCP, messages), with a
+legend under the band; the pane lists each category and each MCP server.
 
 ![limits-meter: band above the prompt, the /limits pane and its toasts](screenshots/limits-meter.svg)
 
@@ -271,7 +282,7 @@ it makes.
 
 | Mod | Network | Runs processes | Files | Calls a model | Sends data anywhere |
 | --- | --- | --- | --- | --- | --- |
-| limits-meter | No | No | No | No | No |
+| limits-meter | No | No | No | Only if you turn on keep-warm: one short message per cache lap, until your next prompt or 2 hours | No |
 | allowlist-coach | No | No | Reads and writes `.claude/settings.local.json`, or `.claude/settings.json` when you pick it, after you confirm | No | No |
 | agent-watch | No | No | No | No | No |
 | test-hud | No | No | Reads Bash's saved copy of an output too long to show whole | No | No |

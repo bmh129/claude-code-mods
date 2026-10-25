@@ -1,4 +1,4 @@
-import type { Limit, Samples, Snapshot, Turn } from '../types'
+import type { CacheClock, ContextGroups, ContextRow, Limit, Samples, Snapshot, Ttl, Turn } from '../types'
 import type { Lang } from './ui'
 import { WORDS } from './words'
 
@@ -241,4 +241,113 @@ export const switchWarning = (
     return w.switchPace(percent, minutes < 60 ? `${minutes} min` : resetIn(runsOutAt, now, lang))
   }
   return w.switchFaster(percent, toModel ? MODEL_ORDER[rankOf(to.model)]! : 'effort max')
+}
+
+/** How long each cache lives after the request that refreshed it. */
+export const TTL_MS: Record<Ttl, number> = { '5m': 5 * 60_000, '1h': 60 * 60_000 }
+
+/** The cache is "cooling" this long before it goes cold: 10 minutes of the hour, a fifth of the 5 minutes. */
+export const coolMs = (ttl: Ttl) => Math.min(10 * 60_000, TTL_MS[ttl] / 5)
+
+export type Clock = { left: number; state: 'warm' | 'cooling' | 'cold' }
+
+/** Time left on the cache and its state; null while the last request or the TTL is unknown. */
+export const clockOf = (c: CacheClock, now: number): Clock | null => {
+  if (c.lastAt === null || c.ttl === null) return null
+  const left = Math.max(0, c.lastAt + TTL_MS[c.ttl] - now)
+  return { left, state: left === 0 ? 'cold' : left <= coolMs(c.ttl) ? 'cooling' : 'warm' }
+}
+
+/** 52:10; the seconds round up, so a cache with 1 ms left still reads 00:01. */
+export const mmss = (ms: number) => {
+  const s = Math.ceil(Math.max(0, ms) / 1000)
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** Keep-warm sends this long before the cache goes cold: 5 minutes of the hour, 30 seconds of the 5 minutes. */
+export const keepMargin = (ttl: Ttl) => Math.min(5 * 60_000, TTL_MS[ttl] / 10)
+
+/** Keep-warm stops by itself after this long. */
+export const KEEP_WARM_MAX_MS = 2 * 60 * 60_000
+
+/** What keep-warm sends. The model reads it framed as a plugin's message; the transcript draws a dim row instead. */
+export const KEEP_WARM_TEXT = 'Keep-warm ping from limits-meter. Reply with a single "." and nothing else.'
+
+/**
+ * The TTL a turn shows, or null. Only a turn of one request counts (its hit rate is that
+ * request's own): after more than 5 minutes idle, a high hit means the cache lived past 5
+ * minutes (1h); a near-zero hit within the hour means it lapsed (5m). A compaction or a changed
+ * prompt also reads near zero, so a later `cache_ttl` or turn overrides it.
+ */
+export const inferTtl = (prev: Turn | undefined, cur: Turn): Ttl | null => {
+  if (prev?.endedAt == null || cur.endedAt == null || cur.steps !== 1 || cur.cacheHit === null) return null
+  const gap = cur.endedAt - cur.durationMs - prev.endedAt
+  if (gap <= TTL_MS['5m'] + 30_000) return null
+  if (cur.cacheHit >= 0.5) return '1h'
+  return gap < TTL_MS['1h'] - 60_000 && cur.cacheHit < 0.2 ? '5m' : null
+}
+
+/** Whole numbers from `weights` that add up to `total` (largest remainder); a weight above 0 gets 1 at least when `total` allows. */
+export const apportion = (total: number, weights: readonly number[]): number[] => {
+  const sum = weights.reduce((a, b) => a + b, 0)
+  if (sum <= 0 || total <= 0) return weights.map(() => 0)
+  const exact = weights.map(w => (w / sum) * total)
+  const out = exact.map(Math.floor)
+  let left = total - out.reduce((a, b) => a + b, 0)
+  for (const [, i] of exact.map((x, i) => [x - Math.floor(x), i] as const).sort((a, b) => b[0] - a[0])) {
+    if (left <= 0) break
+    out[i]!++
+    left--
+  }
+  if (total >= weights.filter(w => w > 0).length) {
+    weights.forEach((w, i) => {
+      if (w > 0 && out[i] === 0) {
+        out[out.indexOf(Math.max(...out))]!--
+        out[i] = 1
+      }
+    })
+  }
+  return out
+}
+
+type CategoryIn = { name: string; tokens: number; kind: string }
+type McpToolIn = { serverName: string; tokens: number; isLoaded: boolean }
+
+/**
+ * The engine's breakdown rows in the band's groups: MCP (one row per server with a loaded tool),
+ * messages, and everything else in use as system. Free space, the compaction buffer and deferred
+ * schemas are not in use. Null without a window to measure against.
+ */
+export const groupContext = (b: { categories: readonly CategoryIn[]; maxTokens: number; mcpTools?: readonly McpToolIn[] }): ContextGroups | null => {
+  if (!(b.maxTokens > 0)) return null
+  const servers = new Map<string, number>()
+  for (const t of b.mcpTools ?? []) if (t.isLoaded) servers.set(t.serverName, (servers.get(t.serverName) ?? 0) + t.tokens)
+  const rows: ContextRow[] = []
+  for (const c of b.categories) {
+    if (c.kind !== 'used' || c.tokens <= 0) continue
+    if (/mcp/i.test(c.name)) {
+      if (servers.size === 0) rows.push({ name: c.name, tokens: c.tokens, group: 'mcp' })
+      else for (const [server, tokens] of servers) rows.push({ name: `MCP · ${server}`, tokens, group: 'mcp' })
+      continue
+    }
+    rows.push({ name: c.name, tokens: c.tokens, group: /^messages$/i.test(c.name) ? 'messages' : 'system' })
+  }
+  const sum = (g: ContextRow['group']) => rows.filter(r => r.group === g).reduce((a, r) => a + r.tokens, 0)
+  return { window: b.maxTokens, system: sum('system'), mcp: sum('mcp'), messages: sum('messages'), rows }
+}
+
+export type Split = { system: number; mcp: number; messages: number; free: number }
+
+/** The window's percent in groups: the groups share `percent` by their tokens, free is the rest; whole numbers adding to 100. */
+export const splitOf = (percent: number, g: ContextGroups): Split => {
+  const used = Math.max(0, Math.min(100, Math.round(percent)))
+  const [system = 0, mcp = 0, messages = 0] = apportion(used, [g.system, g.mcp, g.messages])
+  return { system, mcp, messages: g.system + g.mcp + g.messages === 0 ? used : messages, free: 100 - used }
+}
+
+/** Bar cells per group for a bar `width` cells wide: the used share of it, split by the groups; the rest is free. */
+export const barCells = (width: number, split: Split): Split => {
+  const used = Math.round(((100 - split.free) / 100) * width)
+  const [system = 0, mcp = 0, messages = 0] = apportion(used, [split.system, split.mcp, split.messages])
+  return { system, mcp, messages, free: width - used }
 }

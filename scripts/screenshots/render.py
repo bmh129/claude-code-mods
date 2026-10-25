@@ -3,7 +3,7 @@ import base64, json, struct, sys, os, textwrap, unicodedata
 from xml.sax.saxutils import escape
 
 FG, DIM, BG, CHROME, BORDER, CAP = '#d4d4d8', '#7c7c88', '#16161e', '#22222c', '#3a3a48', '#8a8aa0'
-COLORS = {'claude': '#d97757', 'yellow': '#e5c07b', 'red': '#e06c75', 'green': '#98c379', 'warning': '#e5c07b', 'error': '#e06c75', 'success': '#98c379', 'cyan': '#56b6c2', 'blue': '#61afef', 'magenta': '#c678dd', 'gray': DIM}
+COLORS = {'claude': '#d97757', 'yellow': '#e5c07b', 'red': '#e06c75', 'green': '#98c379', 'warning': '#e5c07b', 'error': '#e06c75', 'success': '#98c379', 'suggestion': '#61afef', 'cyan': '#56b6c2', 'blue': '#61afef', 'magenta': '#c678dd', 'gray': DIM}
 CW, LH, FS = 8.4, 20, 14
 
 def merge(style, props):

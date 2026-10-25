@@ -19,7 +19,7 @@ concurrency:
 
 env:
   # The Claude Code the mods are tested against; raise it on purpose, not by drift.
-  CLAUDE_CODE_VERSION: 2.1.295
+  CLAUDE_CODE_VERSION: 2.1.308
   DISABLE_AUTOUPDATER: '1'
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1'
 

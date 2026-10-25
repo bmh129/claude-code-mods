@@ -7,7 +7,7 @@ Plan limits and context above the prompt, in tokens and percent. Never money.
 - **Band above the prompt:** the main thread's model, in the accent color, and its effort as a
   five-step gauge, `opus 5.5 ▰▰▰▱▱ high` (low to max, `max` in the warning color),
   the 5-hour and weekly plan windows with their reset times, the context window's fill, and
-  the last turn's cache hit rate. With `format: compact` it is one line of numbers:
+  the cache clock (below; the last turn's hit rate until the TTL is known). With `format: compact` it is one line of numbers:
   `sonnet 5.5 ▰▰▰▱▱ high · ctx 8% · 5h 34% · wk 31%`. The effort comes from each request, else
   the turn's end on the main thread, else `/config` at the start; a weaker source never
   overwrites a stronger one, so the band does not flip between `max` and its downgrade.
@@ -15,6 +15,24 @@ Plan limits and context above the prompt, in tokens and percent. Never money.
   Below 90 columns each bar shrinks to one cell. `details` opens the pane, `hide` hides the
   band, and from 85% context `compact` puts `/compact [focus]` in the prompt, with the
   blank marked: nothing runs until you send it.
+- **Cache clock:** the `cache` cell counts the prompt cache down from the end of the last
+  request, `⏱ 52:10`, in the warning color for the last 10 minutes (the last minute of a
+  5-minute cache), then `❄ cold` and one toast. The TTL comes from `cache_ttl` on a model
+  switch, else from a turn of one request after more than 5 minutes idle (a high hit means 1
+  hour, a near-zero one 5 minutes). Until it is known, the cell shows the last turn's hit rate.
+  The TTL and the clock are the engine's; a model switch empties the clock until the next request.
+- **Keep warm:** `keep warm` on the band (while the cache cools) or `/limits keep-warm on` asks
+  first, then sends one short message about 5 minutes before a 1-hour cache goes cold (30
+  seconds before a 5-minute one). It is a real turn: the model reads "Keep-warm ping from
+  limits-meter. Reply with a single "."" and the transcript draws one dim row. **It spends plan**
+  (each send re-reads the whole context from the cache) and is the only way this mod calls a
+  model. It stops at your next prompt, after 2 hours, or when the cache goes cold before a send;
+  `stop` on the band or `/limits keep-warm off` ends it. Off by default.
+- **Context groups:** the context bar is split by the engine's own categories (the `/context`
+  breakdown, estimated locally and free): `█` system (prompt, tools, memory files, skills) in
+  blue, `█` MCP in orange, `█` messages in the context's color, `░` free. A legend under the
+  band names each color with its share of the window. With no breakdown from the engine, the
+  band keeps its single bar. `format: compact` has no legend.
 - **`/limits`** opens a pane with the same figures at full width, context in tokens
   (`116k of 200k`), and the last main-thread turns that fit, under column heads: input,
   output, cache hit, duration, model. The turn with the most input stands out. Its footer has
@@ -22,7 +40,9 @@ Plan limits and context above the prompt, in tokens and percent. Never money.
   - **Pace:** each window's readings since it last reset draw a line; when that line reaches
     100% before the reset, the pane says so: `at this pace, 5h reaches 100% in ~1h20, before
     it resets`.
-  - **Context trend:** a sparkline of the context fill at the end of each turn.
+  - **Cache:** the clock, what it means in tokens, and `keep warm`.
+  - **Context trend:** a sparkline of the context fill at the end of each turn, and the table of
+    every category and MCP server with tokens and share of the window.
   - **Model** and its effort gauge.
   - **Costly switch warning:** the threshold for the toast below, `50% · 60% · 70% · 80% ·
     90%`, one click each; the choice is kept for later sessions.
@@ -44,6 +64,7 @@ Plan limits and context above the prompt, in tokens and percent. Never money.
 /limits          open the pane
 /limits hide     hide the band above the prompt, in later sessions too
 /limits show     bring the band back
+/limits keep-warm on|off  keep the cache warm: asks first, spends plan
 /limits warn N   warn on a costly switch with the 5-hour window from N%, 1 to 100 (default 70)
 /limits help     list the commands
 ```
@@ -54,6 +75,7 @@ Set them in `/config`, under the plugin.
 
 | Option | Values | Default |
 | --- | --- | --- |
+| `icons` | `auto`, `emoji`, `symbol`. `symbol` draws the cache glyphs in one cell (`◷ * ↺`); `auto` uses it in a JetBrains terminal | `auto` |
 | `language` | `auto`, `pt-BR`, `en`. `auto` follows the system's `LANG`: Portuguese for `pt_*`, English otherwise | `auto` |
 | `format` | `full` draws the band with bars; `compact` one line of numbers: model · effort · ctx · 5h · wk | `full` |
 | `cells` | The band's cells, comma-separated, from `model`, `5h`, `wk`, `spend`, `ctx`, `cache`. `all` shows them all | `all` |
@@ -77,7 +99,7 @@ Or for one session: `claude --plugin-dir ./limits-meter`
 
 | Mod | Network | Runs processes | Files | Calls a model | Sends data anywhere |
 | --- | --- | --- | --- | --- | --- |
-| limits-meter | No | No | No | No | No |
+| limits-meter | No | No | No | Only if you turn on keep-warm: one short message per cache lap, until your next prompt or 2 hours | No |
 
 It stores these values in the session's plugin state: the latest figures, recent turns, whether
 the band is hidden, which alerts fired, each window's readings for the pace, the model, the
