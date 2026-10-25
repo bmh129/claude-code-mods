@@ -55,11 +55,38 @@ type Words = {
   warnOrder: string
   warnSet: (percent: number) => string
   warnIs: (percent: number) => string
+  /** The cache clock: pane section, the sentence of each state, the unknown TTL and the hit rate. */
+  cacheHeading: string
+  cacheOf: (ttl: string) => string
+  cacheWarm: (tokens: string) => string
+  cacheCooling: (tokens: string) => string
+  cacheCold: (tokens: string) => string
+  cacheKeeping: (until: string) => string
+  cacheUnknown: string
+  hitRate: (percent: string) => string
+  coldWord: string
+  coldToast: (tokens: string) => string
+  /** Keep-warm: buttons, the question and its answers, why it stopped, the transcript row. */
+  keepWarm: string
+  keepStop: string
+  keepAsk: (tokens: string) => string
+  keepYes: string
+  keepNo: string
+  keepOn: string
+  keepOff: string
+  keepNeedsTtl: string
+  keepStopped: (why: 'prompt' | 'time' | 'cold' | 'failed') => string
+  keepRow: string
+  /** The context groups on the band's legend and in the pane's table. */
+  ctxLabel: string
+  groups: { system: string; mcp: string; messages: string; free: string }
+  breakdownHead: string
+  breakdownNote: string
 }
 
 export const WORDS: Record<Lang, Words> = {
   'pt-BR': {
-    description: 'Limites do plano e contexto: /limits abre o painel; hide, show, warn, help',
+    description: 'Limites do plano, relógio do cache e contexto: /limits abre o painel; hide, show, keep-warm, warn, help',
     pane: 'Limites e contexto',
     hint: 'Números que o engine informa a cada turno. Tokens e percentual, nunca dinheiro.',
     labels: { five_hour: '5h', seven_day: 'sem', spend_limit: 'gasto' },
@@ -89,6 +116,7 @@ export const WORDS: Record<Lang, Words> = {
       '/limits          abre o painel: janelas do plano, contexto em tokens, os últimos 20 turnos',
       '/limits hide     oculta a banda acima do prompt, também nas próximas sessões',
       '/limits show     traz a banda de volta',
+      '/limits keep-warm on|off  mantém o cache quente (gasta plano; pergunta antes)',
       '/limits warn N   avisa na troca cara com a janela de 5h a partir de N% (padrão 70)',
     ].join('\n'),
     failedToRun: what => `Não deu para rodar: ${what}`,
@@ -102,9 +130,39 @@ export const WORDS: Record<Lang, Words> = {
     warnOrder: 'ordem: haiku < sonnet < opus < fable',
     warnSet: percent => `Aviso de troca cara a partir de ${percent}%. Vale nas próximas sessões.`,
     warnIs: percent => `Aviso de troca cara a partir de ${percent}%. /limits warn N muda (1 a 100).`,
+    cacheHeading: 'Cache',
+    cacheOf: ttl => `de ${ttl} (TTL da última resposta)`,
+    cacheWarm: tokens => `Responda agora e ${tokens} tokens saem do cache: ~10% do que custaria reler a frio.`,
+    cacheCooling: tokens => `Esfriando: responda ou mantenha quente. Frio, ${tokens} tokens são relidos sem cache.`,
+    cacheCold: tokens => `Cache frio: a próxima resposta relê ${tokens} tokens sem cache. /compact antes gasta menos.`,
+    cacheKeeping: until => `Mantendo quente: uma mensagem curta antes de esfriar. Para no seu próximo prompt ou em ${until}.`,
+    cacheUnknown: 'TTL do cache desconhecido. Ele aparece depois de uma troca de modelo, ou de um turno de uma só chamada depois de mais de 5 min parado.',
+    hitRate: percent => `taxa de acerto do último turno: ${percent}`,
+    coldWord: 'frio',
+    coldToast: tokens => `Cache frio: a próxima resposta relê ${tokens} tokens sem cache`,
+    keepWarm: 'manter quente',
+    keepStop: 'parar',
+    keepAsk: tokens => `Manter o cache quente? Cada envio relê ${tokens} tokens do cache e gasta plano (sem estimativa em %: depende do contexto). Para no seu próximo prompt ou em 2 h.`,
+    keepYes: 'sim, manter',
+    keepNo: 'não',
+    keepOn: 'Manter quente ligado. Para no seu próximo prompt ou em 2 h.',
+    keepOff: 'Manter quente desligado.',
+    keepNeedsTtl: 'Ainda não sei o TTL do cache, então não dá para saber quando enviar. Tente depois do próximo turno.',
+    keepStopped: why =>
+      ({
+        prompt: 'Manter quente parou: o seu prompt já renova o cache.',
+        time: 'Manter quente parou: passaram 2 h.',
+        cold: 'Manter quente parou: o cache esfriou antes do envio.',
+        failed: 'Manter quente parou: o envio falhou.',
+      })[why],
+    keepRow: '♻ manter quente (mensagem do limits-meter)',
+    ctxLabel: 'ctx',
+    groups: { system: 'sistema', mcp: 'MCP', messages: 'mensagens', free: 'livre' },
+    breakdownHead: 'categoria                tokens  janela',
+    breakdownNote: '≈ estimativa local do engine, os mesmos números do /context',
   },
   en: {
-    description: 'Plan limits and context: /limits opens the pane; hide, show, warn, help',
+    description: 'Plan limits, cache clock and context: /limits opens the pane; hide, show, keep-warm, warn, help',
     pane: 'Limits & context',
     hint: 'Figures the engine reports after each turn. Tokens and percent, never money.',
     labels: { five_hour: '5h', seven_day: 'wk', spend_limit: 'spend' },
@@ -134,6 +192,7 @@ export const WORDS: Record<Lang, Words> = {
       '/limits          open the pane: plan windows, context in tokens, the last 20 turns',
       '/limits hide     hide the band above the prompt, in later sessions too',
       '/limits show     bring the band back',
+      '/limits keep-warm on|off  keep the cache warm (spends plan; asks first)',
       '/limits warn N   warn on a costly switch with the 5-hour window from N% (default 70)',
     ].join('\n'),
     failedToRun: what => `Could not run: ${what}`,
@@ -147,5 +206,35 @@ export const WORDS: Record<Lang, Words> = {
     warnOrder: 'order: haiku < sonnet < opus < fable',
     warnSet: percent => `Costly switch warning from ${percent}%. Kept for later sessions.`,
     warnIs: percent => `Costly switch warning from ${percent}%. /limits warn N changes it (1 to 100).`,
+    cacheHeading: 'Cache',
+    cacheOf: ttl => `of ${ttl} (TTL of the last reply)`,
+    cacheWarm: tokens => `Reply now and ${tokens} tokens come from cache: ~10% of what a cold re-read would cost.`,
+    cacheCooling: tokens => `Cooling: reply or keep it warm. Cold, ${tokens} tokens are re-read with no cache.`,
+    cacheCold: tokens => `Cache cold: the next reply re-reads ${tokens} tokens with no cache. /compact first spends less.`,
+    cacheKeeping: until => `Keeping warm: a short message before it cools. Stops at your next prompt or in ${until}.`,
+    cacheUnknown: 'Cache TTL unknown. It shows after a model switch, or after a one-request turn that follows more than 5 min idle.',
+    hitRate: percent => `last turn hit rate: ${percent}`,
+    coldWord: 'cold',
+    coldToast: tokens => `Cache cold: the next reply re-reads ${tokens} tokens with no cache`,
+    keepWarm: 'keep warm',
+    keepStop: 'stop',
+    keepAsk: tokens => `Keep the cache warm? Each send re-reads ${tokens} tokens from cache and spends plan (no estimate in %: it depends on the context). Stops at your next prompt or in 2 h.`,
+    keepYes: 'yes, keep warm',
+    keepNo: 'no',
+    keepOn: 'Keep-warm on. Stops at your next prompt or in 2 h.',
+    keepOff: 'Keep-warm off.',
+    keepNeedsTtl: 'The cache TTL is not known yet, so there is no telling when to send. Try after the next turn.',
+    keepStopped: why =>
+      ({
+        prompt: 'Keep-warm stopped: your prompt already refreshes the cache.',
+        time: 'Keep-warm stopped: 2 h passed.',
+        cold: 'Keep-warm stopped: the cache went cold before the send.',
+        failed: 'Keep-warm stopped: the send failed.',
+      })[why],
+    keepRow: '♻ keep-warm (message from limits-meter)',
+    ctxLabel: 'ctx',
+    groups: { system: 'system', mcp: 'MCP', messages: 'messages', free: 'free' },
+    breakdownHead: 'category                 tokens  window',
+    breakdownNote: '≈ local engine estimate, the same figures as /context',
   },
 }

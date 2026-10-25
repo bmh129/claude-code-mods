@@ -1,7 +1,24 @@
 import { test } from 'claude-code/testing'
 const NOW = Date.parse('2026-10-08T12:00:00Z')
-const base = (on: any) => {
-  on('clock.now', () => ({ value: NOW }) as never)
+// The window by the engine's categories at 172k of 200k: system 23k, MCP 14k (github 9k, notion 5k), messages 135k.
+const BREAKDOWN = {
+  categories: [
+    { name: 'System prompt', tokens: 6000, kind: 'used' },
+    { name: 'System tools', tokens: 12_000, kind: 'used' },
+    { name: 'MCP tools', tokens: 14_000, kind: 'used' },
+    { name: 'Memory files', tokens: 3000, kind: 'used' },
+    { name: 'Skills', tokens: 2000, kind: 'used' },
+    { name: 'Messages', tokens: 135_000, kind: 'used' },
+    { name: 'Free space', tokens: 28_000, kind: 'free' },
+  ],
+  maxTokens: 200_000,
+  mcpTools: [
+    { name: 'mcp__github__a', serverName: 'github', tokens: 9000, isLoaded: true },
+    { name: 'mcp__notion__a', serverName: 'notion', tokens: 5000, isLoaded: true },
+  ],
+}
+const base = (on: any, at: () => number = () => NOW) => {
+  on('clock.now', () => ({ value: at() }) as never)
   on('session.model', () => ({ value: 'claude-sonnet-5-5' }) as never)
   on('turn.step', async function* () {
     return { turnId: 't1', index: 0, answer: '', toolUses: [], stopReason: 'end_turn' }
@@ -14,7 +31,9 @@ const drain = async (stream: any) => {
   }
 }
 test('snap', async ($, on) => {
-  base(on)
+  let now = NOW
+  base(on, () => now)
+  on('session.usage', () => ({ value: { context: { tokens: 172_000, window: 200_000, percent: 86, breakdown: BREAKDOWN }, rateLimits: [] } }) as never)
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
   on('ui.toast', (_$, e: any) => (console.log('TOAST', e.text), { value: undefined }) as never)
   on('session.measure', () => ({ changed: [] }) as never)
@@ -25,8 +44,12 @@ test('snap', async ($, on) => {
   await $.session.measure({ context: { tokens: 116_000, window: 200_000, percent: 58 }, rateLimits: [{ kind: 'five_hour', percentUsed: 64, resetsAt: '2026-10-08T13:12:00Z' }, { kind: 'seven_day', percentUsed: 31, resetsAt: '2026-10-11T16:00:00Z' }], changed: ['context'] } as never)
   await $.session.measure({ context: { tokens: 172_000, window: 200_000, percent: 86 }, rateLimits: [{ kind: 'five_hour', percentUsed: 82, resetsAt: '2026-10-08T13:12:00Z' }, { kind: 'seven_day', percentUsed: 31, resetsAt: '2026-10-11T16:00:00Z' }], changed: ['context'] } as never)
   // The person switches to opus at 82%: the costly-switch toast; the band leads with opus · high.
-  await $.classic.PostModelSwitch({ from_model: 'claude-sonnet-5-5', to_model: 'claude-opus-5-5', requested_model: 'opus', source: 'command', context_tokens: 172_000, cache_warm: true } as never)
+  await $.classic.PostModelSwitch({ from_model: 'claude-sonnet-5-5', to_model: 'claude-opus-5-5', requested_model: 'opus', source: 'command', context_tokens: 172_000, prompt_cache_warm: true, cache_ttl: '1h' } as never)
   await drain($.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 3 } as never))
+  // The first request on opus refreshes a 1-hour cache; the snapshot is drawn 7m50 later, 52:10 left.
+  await $.turn.complete({ answer: 'x', durationMs: 9000, isAborted: false, turnId: 't', reason: 'answer', usage: { input_tokens: 900, output_tokens: 700, cache_read_input_tokens: 60_000, cache_creation_input_tokens: 800, model: 'claude-opus-5-5' } } as never)
+  now = NOW + 7 * 60_000 + 50_000
+  await $.session.measure({ context: { tokens: 172_000, window: 200_000, percent: 86 }, rateLimits: [{ kind: 'five_hour', percentUsed: 82, resetsAt: '2026-10-08T13:12:00Z' }, { kind: 'seven_day', percentUsed: 31, resetsAt: '2026-10-11T16:00:00Z' }], changed: ['context'] } as never)
   // Context stays at 86%, so the band and the pane offer compact.
   const band = await $.ui.mount({ plugin: 'limits-meter', surface: 'terminal', component: 'AbovePrompt', props: { bodyColumns: 140, hasSurvey: false }, viewport: { columns: 140, rows: 40 } } as never)
   console.log('BAND', JSON.stringify(await band.drawn()))

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { addSamples, alerts, bar, contextSpark, effortLevel, gauge, heaviest, isCostlier, label, mini, minutesLeft, needsCompact, pace, pct, rankOf, resetIn, summary, switchWarning, tone, toSnapshot, toTurn } from '../hooks/meter'
+import { addSamples, alerts, apportion, bar, barCells, clockOf, contextSpark, coolMs, groupContext, inferTtl, keepMargin, mmss, splitOf, effortLevel, gauge, heaviest, isCostlier, label, mini, minutesLeft, needsCompact, pace, pct, rankOf, resetIn, summary, switchWarning, tone, toSnapshot, toTurn } from '../hooks/meter'
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 
@@ -218,5 +218,133 @@ describe('costly switch (0.4.0)', () => {
     expect(switchWarning(sonnet, opus, five(85, NOW + 12 * MIN), 70, [p(73, -12), p(79, -6), p(85, 0)], THREE, NOW, 'pt-BR')).toBe(
       '5h em 85%: reinicia em 12m, antes de acabar · /limits',
     )
+  })
+})
+
+const MIN = 60_000
+const turnAt = (endedAt: number, durationMs: number, cacheHit: number | null, steps = 1) =>
+  ({ input: 1000, output: 100, cacheHit, model: 'claude-opus-5-5', durationMs, endedAt, steps }) as never
+
+describe('cache clock', () => {
+  test('time left, and warm, cooling or cold by the TTL', () => {
+    const c = { lastAt: NOW, ttl: '1h' as const }
+    expect(clockOf(c, NOW)).toEqual({ left: 60 * MIN, state: 'warm' })
+    expect(clockOf(c, NOW + 49 * MIN)).toEqual({ left: 11 * MIN, state: 'warm' })
+    expect(clockOf(c, NOW + 50 * MIN)).toEqual({ left: 10 * MIN, state: 'cooling' })
+    expect(clockOf(c, NOW + 60 * MIN)).toEqual({ left: 0, state: 'cold' })
+    expect(clockOf(c, NOW + 90 * MIN)).toEqual({ left: 0, state: 'cold' })
+    expect(clockOf({ lastAt: NOW, ttl: '5m' }, NOW + 4 * MIN)).toEqual({ left: MIN, state: 'cooling' })
+    expect(clockOf({ lastAt: NOW, ttl: '5m' }, NOW + 3 * MIN)).toEqual({ left: 2 * MIN, state: 'warm' })
+  })
+
+  test('unknown until both the last request and the TTL are known', () => {
+    expect(clockOf({ lastAt: null, ttl: '1h' }, NOW)).toBeNull()
+    expect(clockOf({ lastAt: NOW, ttl: null }, NOW)).toBeNull()
+  })
+
+  test('the cooling span is 10 minutes of the hour and a fifth of 5 minutes', () => {
+    expect(coolMs('1h')).toBe(10 * MIN)
+    expect(coolMs('5m')).toBe(MIN)
+  })
+
+  test('mm:ss rounds the seconds up and never goes negative', () => {
+    expect(mmss(52 * MIN + 10_000)).toBe('52:10')
+    expect(mmss(60 * MIN)).toBe('60:00')
+    expect(mmss(1)).toBe('00:01')
+    expect(mmss(0)).toBe('00:00')
+    expect(mmss(-5000)).toBe('00:00')
+  })
+
+  test('keep-warm sends 5 minutes before the hour ends and 30 seconds before the 5 minutes', () => {
+    expect(keepMargin('1h')).toBe(5 * MIN)
+    expect(keepMargin('5m')).toBe(30_000)
+  })
+})
+
+describe('TTL read from the turns', () => {
+  const prev = turnAt(NOW, 10_000, 0.9)
+  test('a hit after more than 5 minutes idle means the cache lived on: 1 hour', () => {
+    expect(inferTtl(prev, turnAt(NOW + 20 * MIN, 8000, 0.95))).toBe('1h')
+  })
+  test('a near-zero hit after 5 to 59 minutes idle means it lapsed: 5 minutes', () => {
+    expect(inferTtl(prev, turnAt(NOW + 20 * MIN, 8000, 0.02))).toBe('5m')
+    expect(inferTtl(prev, turnAt(NOW + 70 * MIN, 8000, 0.02))).toBeNull()
+  })
+  test('no reading inside 5 minutes, in a turn of several requests, or without a first turn', () => {
+    expect(inferTtl(prev, turnAt(NOW + 3 * MIN, 8000, 0.95))).toBeNull()
+    expect(inferTtl(prev, turnAt(NOW + 20 * MIN, 8000, 0.95, 3))).toBeNull()
+    expect(inferTtl(prev, turnAt(NOW + 20 * MIN, 8000, null))).toBeNull()
+    expect(inferTtl(undefined, turnAt(NOW + 20 * MIN, 8000, 0.95))).toBeNull()
+  })
+  test('a middling hit says nothing', () => {
+    expect(inferTtl(prev, turnAt(NOW + 20 * MIN, 8000, 0.3))).toBeNull()
+  })
+})
+
+describe('context groups', () => {
+  const categories = [
+    { name: 'System prompt', tokens: 6000, kind: 'used' },
+    { name: 'System tools', tokens: 12_000, kind: 'used' },
+    { name: 'MCP tools', tokens: 14_000, kind: 'used' },
+    { name: 'Messages', tokens: 79_000, kind: 'used' },
+    { name: 'Free space', tokens: 51_000, kind: 'free' },
+    { name: 'Autocompact buffer', tokens: 33_000, kind: 'buffer' },
+    { name: 'Deferred tools', tokens: 9000, kind: 'deferred' },
+  ]
+  const mcpTools = [
+    { serverName: 'github', tokens: 5000, isLoaded: true },
+    { serverName: 'github', tokens: 4000, isLoaded: true },
+    { serverName: 'notion', tokens: 5000, isLoaded: true },
+    { serverName: 'linear', tokens: 3000, isLoaded: false },
+  ]
+
+  test('rows by group; MCP by server with its loaded tools; free, buffer and deferred are not in use', () => {
+    const g = groupContext({ categories, maxTokens: 200_000, mcpTools })!
+    expect(g.system).toBe(18_000)
+    expect(g.mcp).toBe(14_000)
+    expect(g.messages).toBe(79_000)
+    expect(g.rows.map(r => [r.name, r.group])).toEqual([
+      ['System prompt', 'system'],
+      ['System tools', 'system'],
+      ['MCP · github', 'mcp'],
+      ['MCP · notion', 'mcp'],
+      ['Messages', 'messages'],
+    ])
+    expect(g.rows.find(r => r.name === 'MCP · github')!.tokens).toBe(9000)
+  })
+
+  test('without server detail the MCP row stays as the engine named it; without a window, nothing', () => {
+    expect(groupContext({ categories, maxTokens: 200_000 })!.rows.find(r => r.group === 'mcp')).toEqual({ name: 'MCP tools', tokens: 14_000, group: 'mcp' })
+    expect(groupContext({ categories, maxTokens: 0 })).toBeNull()
+  })
+
+  test('the percent is shared by the groups\' tokens, and free is the rest', () => {
+    const g = groupContext({ categories, maxTokens: 200_000, mcpTools })!
+    expect(splitOf(58, g)).toEqual({ system: 10, mcp: 7, messages: 41, free: 42 })
+    expect(splitOf(0, g)).toEqual({ system: 0, mcp: 0, messages: 0, free: 100 })
+    expect(splitOf(100, g).free).toBe(0)
+  })
+
+  test('a window with nothing counted puts what is used in messages', () => {
+    const g = groupContext({ categories: [{ name: 'Free space', tokens: 1, kind: 'free' }], maxTokens: 200_000 })!
+    expect(splitOf(30, g)).toEqual({ system: 0, mcp: 0, messages: 30, free: 70 })
+  })
+
+  test('bar cells per group add up to the width, and a group in use keeps one cell', () => {
+    const cells = barCells(10, { system: 12, mcp: 7, messages: 39, free: 42 })
+    expect(cells.system + cells.mcp + cells.messages + cells.free).toBe(10)
+    expect(cells.free).toBe(4)
+    expect(cells.system).toBeGreaterThanOrEqual(1)
+    expect(cells.mcp).toBeGreaterThanOrEqual(1)
+    expect(barCells(10, { system: 10, mcp: 5, messages: 35, free: 50 })).toEqual({ system: 1, mcp: 1, messages: 3, free: 5 })
+    // Too few used cells for every group: the biggest ones get them.
+    expect(barCells(6, { system: 2, mcp: 1, messages: 3, free: 94 })).toEqual({ system: 0, mcp: 0, messages: 0, free: 6 })
+  })
+
+  test('apportion: largest remainder, one cell for a small group, zero when nothing', () => {
+    expect(apportion(10, [1, 1, 1])).toEqual([4, 3, 3])
+    expect(apportion(4, [90, 5, 5])).toEqual([2, 1, 1])
+    expect(apportion(0, [1, 2])).toEqual([0, 0])
+    expect(apportion(5, [0, 0])).toEqual([0, 0])
   })
 })

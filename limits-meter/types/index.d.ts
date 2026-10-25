@@ -32,7 +32,24 @@ export type Turn = {
   contextPercent?: number | null
   /** When the turn ended, in epoch milliseconds: the costly-switch pace spans the last turns. */
   endedAt?: number
+  /** Model requests the turn made; 1 means its cache hit rate is its first request's, which the cache TTL inference needs. */
+  steps?: number
 }
+
+/** How long the prompt cache lives after a request: `cache_ttl` on a model switch, or inferred from the turns. */
+export type Ttl = '5m' | '1h'
+
+/** When the main thread's last request ended, and the TTL of the cache it refreshed; null while unknown. */
+export type CacheClock = { lastAt: number | null; ttl: Ttl | null }
+
+/** Keep-warm is on until this time (epoch ms), or at the person's next prompt. */
+export type KeepWarm = { until: number }
+
+/** One row of the window's breakdown, in the group the band draws it in. */
+export type ContextRow = { name: string; tokens: number; group: 'system' | 'mcp' | 'messages' }
+
+/** The context window by the engine's categories (`$.session.usage({ breakdown: 'summary' })`), grouped for the band. */
+export type ContextGroups = { window: number; system: number; mcp: number; messages: number; rows: ContextRow[] }
 
 /** Readings of each plan window since it last reset, for the pace: [epoch ms, percent]. */
 export type Samples = Record<string, { resetsAt: number; points: [number, number][] }>
@@ -51,6 +68,12 @@ declare module 'claude-code' {
       effort: string | number | null
       /** The 5-hour percent from which a costly switch raises a toast; kept in $.store. */
       switchAt: number
+      /** The cache clock: last request end and TTL. */
+      cache: CacheClock
+      /** Keep-warm while on; null when off. */
+      keepWarm: KeepWarm | null
+      /** The latest context breakdown, grouped; null before the first or when the engine gives none. */
+      groups: ContextGroups | null
     }
   }
 }
