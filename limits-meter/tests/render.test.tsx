@@ -752,19 +752,24 @@ test('cache clock: the pane counts, says what it means and offers keep warm', as
   await start($)
   await $.session.measure(MEASURE as never)
   await warm($)
+  // The pane redraws every second while it is mounted, so it is open only for each reading.
+  const read = async () => {
+    const p = await pane($)
+    const shown = JSON.stringify(await p.drawn())
+    await p.unmount()
+    return shown
+  }
   await world.clock.advance(8 * MIN)
-  const p = await pane($)
-  let shown = JSON.stringify(await p.drawn())
+  let shown = await read()
   expect(shown).toContain('⏱ 52:00')
   expect(shown).toContain('of 1 h (TTL of the last reply)')
   expect(shown).toContain('Reply now and 116k tokens come from cache')
   expect(shown).toContain('keep warm')
   await world.clock.advance(46 * MIN)
-  shown = JSON.stringify(await p.drawn())
+  shown = await read()
   expect(shown).toContain('Cooling: reply or keep it warm')
   await world.clock.advance(10 * MIN)
-  expect(JSON.stringify(await p.drawn())).toContain('Cache cold: the next reply re-reads 116k tokens with no cache')
-  await p.unmount()
+  expect(await read()).toContain('Cache cold: the next reply re-reads 116k tokens with no cache')
 })
 
 test('keep warm: asks first, then sends before the cache goes cold, and the turn refreshes the clock', async ($, on) => {
