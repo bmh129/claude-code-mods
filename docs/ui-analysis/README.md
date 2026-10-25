@@ -4,10 +4,40 @@ Fonte: [9 Insane Claude Mods I Already Can't Live Without](https://youtu.be/bTqi
 Base da análise: transcrição + descrição visual quadro a quadro do vídeo (VidIQ `video_watch`) e as
 imagens deste repositório renderizadas em PNG (nesta pasta).
 
-> **Limite honesto:** o YouTube bloqueou o download do vídeo (anti-bot), então não há frames reais
-> dos 9 mods, só a thumbnail (`video-thumbnail.jpg`). As descrições de UI abaixo vêm da análise
-> visual do vídeo, com o timestamp do melhor frame para você capturar manualmente. O pacote
-> oficial dos mods está no link da descrição do vídeo.
+> **Limite honesto:** o YouTube bloqueou o download do vídeo (anti-bot). Os frames reais são os 5
+> prints enviados pelo usuário (seção 0, mods 2, 3 e 4). Para os outros 6 mods a UI vem da análise
+> visual do vídeo (VidIQ), com o timestamp do melhor frame para capturar. O pacote oficial dos
+> mods está no link da descrição do vídeo.
+
+## 0. Frames reais do vídeo (enviados pelo usuário)
+
+Cinco prints dos mods 2, 3 e 4, em `video-frames/`. Eles corrigem e detalham a descrição textual da seção 1.
+
+| Arquivo | Mod | O que se vê de fato |
+| --- | --- | --- |
+| `helper-desk-taskbar.png` | Helper desk, barra | Cartão acima do campo de prompt: título da tarefa (`● Video prep: Claude Projects`), selo roxo `Tasks 0/5`, trilho com **marcas de divisão** por etapa, `0%`, `×` para fechar e uma segunda linha `Now: Research the topic` |
+| `helper-desk-panel-start.png` | Helper desk, painel | Abas `Mods × · Helper Desk × · In this chat ×` (os três mods dividem **um** painel com abas). Três cartões de resumo (`Total chat cost $1.05`, `Subagent tokens 106k`, `Time 0:11`), cabeçalho verde `Running · 5` e um cartão por agente |
+| `helper-desk-panel-running-finished.png` | Helper desk, painel | Mesmos cartões 1:54 depois: `Running · 3` (verde) e `Finished · 2` (âmbar) em grupos recolhíveis; agentes concluídos mostram `Done · 6 steps`, check e barra cheia |
+| `cache-clock.png` | Cache clock | Cartão flutuante (não uma faixa fixa): `🕐 Cache warm 59:59` em verde + linha de progresso + botão `Keep warm` à direita, e **uma frase de custo em linguagem simples**: “1 hour cache, as Anthropic's last reply set it. Reply now and 214k tokens cost 5 to 10% as much.” |
+| `handoff.png` | Handoff | Cartão com título `Handoff ready:` + `912 words` em destaque amarelo; 5 etapas com check, barra e **um número por etapa** (`186 messages`, `14 files`, `2 skills, 3 links`, `34 s`); caminho salvo; botões `Copy handoff prompt` (**primário, preto**), `Start new chat with it`, `Open file`, `Close` |
+
+O que cada print ensina (e que a seção 1 não tinha):
+
+1. **Cada subagente tem uma identidade completa e única**: sprite pixelado, cor da borda do cartão, cor da barra e do passo atual
+   (vermelho, laranja, verde, azul, rosa). Você acha “o agente laranja” no olho, sem ler. O nome é o papel (`Thumbnails`, `Research`,
+   `Script`), a linha de baixo é `tipo · modelo`.
+2. **Cada cartão responde três perguntas**: onde está (`Step 3 · Writing the hook`), o que acabou de fazer (duas linhas `Reading pre-outline.md`) e quanto
+   falta (barra). No nosso `agent-watch` a linha só diz o que está rodando e há uma barra única de tokens, não de progresso.
+3. **Totais no topo, em cartões** (custo, tokens, tempo), antes da lista. O custo em dinheiro aparece (`$4.31`); nosso `limits-meter`
+   evita dinheiro de propósito, então aqui é uma decisão de produto, não de UI.
+4. **Grupos por estado** (`Running`, `Finished`) com cabeçalho de cor cheia; os concluídos ficam visíveis, resumidos.
+5. **A barra de tarefas tem marcas de etapa** no trilho, então 0% já mostra “são 5 partes”. A nossa barra do `plain-view` só preenche.
+6. **Cache clock explica o porquê com um número**: “5 a 10% do custo”. Nosso `cache 42%` mostra a taxa, não a consequência.
+7. **Botão primário escuro, secundários cinza-claros**: hierarquia clara em dois níveis (Handoff). No terminal o equivalente é `[ cor cheia ]` vs. `texto`.
+8. **Em cada etapa, a evidência**: `186 messages`, `14 files`. Dá confiança de que o resumo não foi superficial.
+
+Correção da seção 1: o Cache clock é um cartão flutuante (não “faixa docada”) e o Helper desk usa abas num painel único com os outros mods.
+Faltam frames dos mods 1, 5, 6, 7, 8 e 9: os timestamps da seção 1 apontam onde capturar.
 
 ## 1. Os 9 mods do vídeo e a UI de cada um
 
@@ -46,9 +76,12 @@ barras de `allowlist-coach` (`●●●○○`) e `limits-meter` (`████�
 
 | Mod | Melhoria | Inspirada em | Esforço |
 | --- | --- | --- | --- |
-| **agent-watch** | Nome e glifo/cor fixos por subagente (`◆ explorer`, `◆ fixer`) em vez de só “Fix the flaky test”; custo por agente além de tokens; faixa de progresso único `Tasks 2/5` acima do prompt | Helper desk | M |
+| **agent-watch** | Identidade por subagente: glifo + cor fixos (`◆` laranja = Research) usados no cartão, na barra e no passo atual, em vez de só o texto “Fix the flaky test” e uma barra de tokens | Helper desk (prints 2 e 3) | M |
+| **agent-watch** | Cada agente com `Step N · ação atual` e as 2 últimas ações, não só a linha “running npm test for 6m” | Helper desk (print 3) | M |
+| **agent-watch** | Resumo no topo (custo ou tokens totais, tempo) e grupos `Running · n` / `Finished · n` com cabeçalho de cor; hoje os concluídos somem numa linha `1 finished` | Helper desk (prints 2 e 3) | P |
+| **agent-watch / plain-view** | Faixa acima do prompt com `Tasks 2/5`, marcas de divisão por etapa no trilho e `Now: <etapa>` (o cartão do `plain-view` já tem a barra, faltam as marcas e o selo de contagem) | Helper desk (print 1) | P |
 | **agent-watch** | Modo compacto automático com 5+ agentes (uma linha por agente, expande no clique) | fraqueza do Helper desk | P |
-| **limits-meter** | Contagem regressiva do **cache** (TTL real da resposta) na faixa, com cor verde→vermelho; hoje só mostra `cache 42%` (taxa de acerto), que não diz *quando esfria* | Cache clock | M |
+| **limits-meter** | Contagem regressiva do **cache** (TTL real da resposta) na faixa, com cor verde→vermelho; hoje só mostra `cache 42%` (taxa de acerto), que não diz *quando esfria*. Acompanhar de uma frase de consequência: “Responda agora e 214k tokens custam 5 a 10%” | Cache clock (print 4) | M |
 | **limits-meter** | Botão `keep warm` / `/keep-warm`: mensagem oculta antes do TTL, para sozinho após 2 h ou no próximo prompt. Estimar o custo frio vs. quente (`~$1,6 vs ~$0,04`) | Cache clock | M |
 | **limits-meter** | Em 85% de contexto (hoje só sugere `compact`), oferecer `handoff` ao lado | Handoff | P |
 | **allowlist-coach** | Padronizar a barra de contagem com a das outras barras (`███░░`); destacar o botão `allow` como primário e `dismiss` como secundário (hoje têm o mesmo peso) | padrão ação primária + skip | P |
