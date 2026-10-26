@@ -249,6 +249,11 @@ const BOX_HOVER = { borderColor: 'claude', borderDimColor: false, backgroundColo
 const LABEL_HOVER = { color: 'inverseText', bold: true } as const
 /** A5: an action that is not the card's decision, in a neutral box. Never `plain`: a plain Button ignores `variant`. */
 const SECONDARY = { variant: 'secondary' } as const
+/**
+ * The fill a boxed button takes under the pointer, as the menu's tiles do: the accent behind the label,
+ * the label in the inverse color. `scope` is the button's own key, so the hover needs no keyed Box.
+ */
+const hoverFill = (key: string) => ({ scope: `hover:${key}`, backgroundColor: 'claude', color: 'inverseText' }) as const
 
 /**
  * /pad's arguments in the row under the menu. None waits in the prompt for typing: `add` and
@@ -324,7 +329,7 @@ async function pressVerb($: EngineInterface, a: (typeof PAD_ACTIONS)[number]) {
  * pane, the list, hide, help) run; those that take an argument or undo the person's list (add,
  * remove, reset) wait in the prompt, so nothing is lost on a stray click.
  */
-function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | 'Text' | 'Button'>, more: number, off = false) {
+function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | 'Text' | 'Button'>, more: number, off = false, tone?: string) {
   const { Box, Text, Button } = ui
   const w = WORDS[lang]
   // Hidden, the row offers `show`: the way back is a press, not something to type.
@@ -336,7 +341,13 @@ function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | '
       {actions.map((a, i) => (
         <Box key={`padrow:${a.verb}`} flexDirection="row">
           {i > 0 && <Text dimColor> · </Text>}
-          <Button key={`cmd:${a.verb}`} plain dimColor label={w.verbs[a.verb] ?? a.verb} onPress={() => pressVerb($, a)} />
+          {tone ? (
+            <Button key={`cmd:${a.verb}`} plain onPress={() => pressVerb($, a)}>
+              <Text color={tone}>{w.verbs[a.verb] ?? a.verb}</Text>
+            </Button>
+          ) : (
+            <Button key={`cmd:${a.verb}`} plain dimColor label={w.verbs[a.verb] ?? a.verb} onPress={() => pressVerb($, a)} />
+          )}
         </Box>
       ))}
     </Box>
@@ -455,8 +466,10 @@ function control(
 
 /**
  * P2: a chip or action in one line. The terminal draws `[ label ]` and a desktop its native secondary
- * button (A5); the current choice is bold accent text, not a button; a warned chip shows its label in
- * the warning color.
+ * button (A5); the current choice is bold accent text, not a button. A `color` (a theme key) or a
+ * warned chip draws the label in it, as the children of the Button: a `label` beside children wins on
+ * a desktop and hides them. `hover` puts the filled hover on a boxed button: `both` surfaces, or
+ * `desk` for one that is plain text on the terminal.
  */
 function flat(
   $: EngineInterface,
@@ -464,7 +477,7 @@ function flat(
   key: string,
   label: string,
   onPress: () => unknown,
-  opts: { isOn?: boolean; isWarned?: boolean } = {},
+  opts: { isOn?: boolean; isWarned?: boolean; color?: string; hover?: 'both' | 'desk' } = {},
 ) {
   const { Button, Text } = $.ui.resolve(e as never) as Elements['desktop']
   if (opts.isOn) {
@@ -474,14 +487,16 @@ function flat(
       </Text>
     )
   }
-  if (opts.isWarned) {
+  const hover = opts.hover === 'both' || (opts.hover === 'desk' && e.surface !== 'terminal') ? { hover: hoverFill(key) } : {}
+  const color = opts.isWarned ? 'warning' : opts.color
+  if (color) {
     return (
-      <Button key={key} {...SECONDARY} onPress={onPress}>
-        <Text color="warning">{label}</Text>
+      <Button key={key} {...SECONDARY} {...hover} onPress={onPress}>
+        <Text color={color}>{label}</Text>
       </Button>
     )
   }
-  return <Button key={key} {...SECONDARY} label={label} onPress={onPress} />
+  return <Button key={key} {...SECONDARY} {...hover} label={label} onPress={onPress} />
 }
 
 /**
@@ -491,10 +506,11 @@ function flat(
  */
 function toggle($: EngineInterface, e: { surface: string }, key: string, isOn: boolean, onPress: () => unknown) {
   const sb = WORDS[lang].switchboard
-  if (e.surface === 'terminal') return flat($, e, key, isOn ? sb.on : sb.off, onPress)
+  if (e.surface === 'terminal') return flat($, e, key, isOn ? sb.on : sb.off, onPress, { color: isOn ? 'success' : 'inactive' })
   const { Button, Text } = $.ui.resolve(e as never) as Elements['desktop']
+  // No `label`: beside the children it wins on a desktop and the block is not drawn.
   return (
-    <Button key={key} label={isOn ? sb.on : sb.off} onPress={onPress}>
+    <Button key={key} onPress={onPress}>
       <Text backgroundColor={isOn ? 'success' : 'inactive'} color="inverseText">
         {isOn ? '   ● ' : ' ●   '}
       </Text>
@@ -881,7 +897,7 @@ export const register: Register = (on, options) => {
       <Box key={`chips:${command}`} flexDirection="row" flexWrap="wrap" alignItems="center" gap={1}>
         <Text dimColor>{label}</Text>
         {values.map(v =>
-          flat($, e, `${command}:${v}`, `${v === active ? '●' : '○'} ${v}`, () => choose($, command, v), { isOn: v === active, isWarned: isWarned(v, fiveHour) }),
+          flat($, e, `${command}:${v}`, `${v === active ? '●' : '○'} ${v}`, () => choose($, command, v), { isOn: v === active, isWarned: isWarned(v, fiveHour), hover: 'desk' }),
         )}
       </Box>
     )
@@ -904,11 +920,11 @@ export const register: Register = (on, options) => {
                 <Button key={`mod:${m.plugin}`} plain label={modLabel(m, icons)} onPress={() => runMod($, m)} />
               )}
             </Box>
-            {!isOff && state !== 'unknown' && flat($, e, `eye:${m.plugin}`, state === 'hidden' ? '◌' : '◉', () => pressEye($, m, state === 'hidden'))}
+            {!isOff && state !== 'unknown' && flat($, e, `eye:${m.plugin}`, state === 'hidden' ? '◌' : '◉', () => pressEye($, m, state === 'hidden'), { ...(state === 'hidden' ? { color: 'warning' } : {}) })}
             {state !== 'unknown' && toggle($, e, `toggle:${m.plugin}`, !isOff, () => pressToggle($, m, !isOff))}
           </Box>
           <Text dimColor>{sb.mods[m.plugin] ?? ''}</Text>
-          <Text dimColor>{note}</Text>
+          {state === 'hidden' ? <Text color="warning">{note}</Text> : <Text dimColor={!isOff} color={isOff ? 'inactive' : undefined}>{note}</Text>}
         </Box>
       )
     }
@@ -931,10 +947,10 @@ export const register: Register = (on, options) => {
         )}
 
         <Box flexDirection="row" gap={1}>
-          {tabNow === 'mods' ? <Text bold>{sb.tabs.mods}</Text> : <Button key="tab:mods" plain dimColor label={sb.tabs.mods} onPress={() => update($, tab, () => 'mods')} />}
+          {tabNow === 'mods' ? <Text bold color="claude">{sb.tabs.mods}</Text> : <Button key="tab:mods" plain dimColor label={sb.tabs.mods} onPress={() => update($, tab, () => 'mods')} />}
           <Text dimColor>·</Text>
           {tabNow === 'shortcuts' ? (
-            <Text bold>{sb.tabs.shortcuts}</Text>
+            <Text bold color="claude">{sb.tabs.shortcuts}</Text>
           ) : (
             <Button key="tab:shortcuts" plain dimColor label={sb.tabs.shortcuts} onPress={() => update($, tab, () => 'shortcuts')} />
           )}
@@ -972,15 +988,15 @@ export const register: Register = (on, options) => {
           </Box>
         ) : shortcuts.length > 0 ? (
           <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-            {shortcuts.map(x => flat($, e, `pad:${x.id}`, buttonLabel(x, icons), () => press($, x)))}
+            {shortcuts.map(x => flat($, e, `pad:${x.id}`, buttonLabel(x, icons), () => press($, x), { hover: 'both' }))}
           </Box>
         ) : (
           <Text dimColor>{w.empty}</Text>
         )}
 
         <Box flexDirection="column" alignItems="flex-start">
-          {padRow($, { Box, Text, Button }, 0, await read($, isOff))}
-          <Button key="close" {...SECONDARY} label={p.close} onPress={() => $.ui.close({ id: PANEL })} />
+          {padRow($, { Box, Text, Button }, 0, await read($, isOff), 'suggestion')}
+          {flat($, e, 'close', p.close, () => $.ui.close({ id: PANEL }), { hover: 'both' })}
         </Box>
       </Box>
     )

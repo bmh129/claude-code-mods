@@ -1097,3 +1097,73 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.unmount()
   })
 }
+
+// r5 and r6 (prototype launchpad-0.9.0, B and D): the colors of state and the filled hover on boxed buttons.
+type Node = { type?: string; props?: Record<string, any>; hover?: Record<string, any>; children?: unknown[] }
+const nodes = (tree: unknown, type: string, out: Node[] = []): Node[] => {
+  if (Array.isArray(tree)) tree.forEach(t => nodes(t, type, out))
+  else if (tree && typeof tree === 'object') {
+    if ((tree as Node).type === type) out.push(tree as Node)
+    Object.values(tree).forEach(v => nodes(v, type, out))
+  }
+  return out
+}
+const button = (tree: unknown, key: string) => nodes(tree, 'Button').find(b => b.props?.key === key)
+const hasHover = (tree: unknown, key: string) => button(tree, key)?.hover !== undefined
+const textColor = (tree: unknown, key: string) => (nodes(button(tree, key), 'Text')[0]?.props ?? {}).color
+
+test('hover: the filled hover is on boxed buttons only. Terminal: shortcuts and close. Desktop: also the controls', async ($, on) => {
+  sbWorld(on)
+  await start($)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await panel($, surface)
+    let tree = await ui.drawn()
+    // never on a toggle, the eye (icon only), the footer verbs, the tabs, the quiet toggle
+    for (const k of ['toggle:limits-meter', 'toggle:agent-watch', 'toggle:quiet', 'eye:limits-meter', 'tab:shortcuts', 'cmd:configuration', 'cmd:help']) expect(hasHover(tree, k)).toBe(false)
+    expect(hasHover(tree, 'close')).toBe(true)
+    // the controls: a box on the desktop, plain text on the terminal
+    for (const k of ['model:sonnet', 'effort:low']) expect(hasHover(tree, k)).toBe(surface === 'desktop')
+    // the fill: the accent behind the label, the inverse color on it, a scope of its own so no keyed Box is needed
+    expect(button(tree, 'close')?.hover).toEqual({ scope: 'hover:close', backgroundColor: 'claude', color: 'inverseText' })
+    await ui.press({ key: 'tab:shortcuts' })
+    tree = await ui.drawn()
+    for (const k of ['pad:compact', 'pad:context']) expect(button(tree, k)?.hover).toEqual({ scope: `hover:${k}`, backgroundColor: 'claude', color: 'inverseText' })
+    await ui.press({ key: 'tab:mods' })
+    await ui.unmount()
+  }
+})
+
+test('state color: on is green and off is dim in the label, the hidden eye is amber, the open tab is the accent', async ($, on) => {
+  sbWorld(on)
+  await start($)
+  const ui = await panel($)
+  let tree = await ui.drawn()
+  expect(textColor(tree, 'toggle:limits-meter')).toBe('success')
+  expect(textColor(tree, 'toggle:agent-watch')).toBe('inactive')
+  expect(textColor(tree, 'toggle:quiet')).toBe('inactive')
+  expect(textColor(tree, 'eye:limits-meter')).toBeUndefined()
+  expect(nodes(tree, 'Text').some(t => t.props?.color === 'claude' && t.children?.[0] === 'Mods')).toBe(true) // the open tab
+  expect(nodes(tree, 'Text').some(t => t.props?.color === 'inactive' && t.children?.[0] === '/watch on liga')).toBe(true)
+  for (const k of ['cmd:configuration', 'cmd:list', 'cmd:help']) expect(textColor(tree, k)).toBe('suggestion')
+  await ui.press({ key: 'eye:plain-view' })
+  tree = await ui.drawn()
+  expect(textColor(tree, 'eye:plain-view')).toBe('warning')
+  expect(nodes(tree, 'Text').some(t => t.props?.color === 'warning' && t.children?.[0] === '/plain-view show mostra')).toBe(true)
+  await ui.press({ key: 'toggle:quiet' }) // runs /pad quiet; the toggle itself reads the option on the next load
+  await ui.unmount()
+})
+
+test('desktop toggle: a green block with a knob, drawn from the children only (a label beside them would win)', async ($, on) => {
+  sbWorld(on)
+  await start($)
+  const ui = await panel($, 'desktop')
+  const tree = await ui.drawn()
+  const on1 = button(tree, 'toggle:limits-meter')
+  const off1 = button(tree, 'toggle:agent-watch')
+  expect(nodes(on1, 'Text')[0]?.props).toEqual({ backgroundColor: 'success', color: 'inverseText' })
+  expect(nodes(off1, 'Text')[0]?.props).toEqual({ backgroundColor: 'inactive', color: 'inverseText' })
+  // the engine names the control by its children's text: the knob, not `● on`, so no explicit label was passed
+  expect(on1?.props?.label).toBe('   ● ')
+  expect(off1?.props?.label).toBe(' ●   ')
+  await ui.unmount()
+})
