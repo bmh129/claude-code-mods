@@ -1,6 +1,6 @@
 {
   "name": "test-hud",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "description": "Test runs at a glance: passing over total in the status line, a sparkline of failures across runs, the failing tests, and a toast when the suite turns green",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -9,6 +9,12 @@
       "title": "On",
       "description": "Track test runs: the status line, the pane and the toasts. Off keeps only the /test-hud command, which turns it back on. /test-hud on and off change it too; /test-hud hide keeps it on but silent",
       "default": true
+    },
+    "quiet": {
+      "type": "boolean",
+      "title": "Quiet",
+      "description": "Draw nothing by itself, as hide does, and keep the command and the pane. /pad quiet on and off set it in every mod at once. Errors, permission requests and the agent's questions are never hidden",
+      "default": false
     },
     "language": {
       "type": "string",

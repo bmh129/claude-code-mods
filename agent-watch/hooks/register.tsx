@@ -89,6 +89,8 @@ let stallMs = 5 * 60_000
 let isOn = true
 /** On but silent: no toast and no status line. The pane still opens. Kept in the store. */
 let isHidden = false
+/** The `quiet` option, set in every mod by `/pad quiet`: hides what the mod draws by itself, as hide does. `show` does not undo it. */
+let isQuiet = false
 // Set by register from the options, and by session.start from the system's LANG and terminal.
 let lang: Lang = 'en'
 let style: IconStyle = 'emoji'
@@ -125,7 +127,7 @@ const refresh = async ($: EngineInterface) => {
     return checked.agents
   })
   if (left !== known) await update($, orphans, () => left)
-  for (const a of raised) if (!isHidden) $.ui.toast(w.stalledToast(nameOf(a), stallText(a, now, lang)), { timeoutMs: 10_000 })
+  for (const a of raised) if (!isHidden && !isQuiet) $.ui.toast(w.stalledToast(nameOf(a), stallText(a, now, lang)), { timeoutMs: 10_000 })
 
   const list = await read($, agents)
   const active = list.filter(a => isActive(a.status) && !a.id.startsWith(DEMO)).length
@@ -147,13 +149,13 @@ const refresh = async ($: EngineInterface) => {
     const run = wave && { ...wave, windowUsed: used }
     if (run) {
       await update($, lastRun, () => run)
-      if (!isHidden) $.ui.toast(w.doneToast(runText(run, lang)), { timeoutMs: 10_000 })
+      if (!isHidden && !isQuiet) $.ui.toast(w.doneToast(runText(run, lang)), { timeoutMs: 10_000 })
     }
   }
 
   const running = list.filter(a => isActive(a.status))
   const stalled = running.filter(a => a.isStalled).length
-  const text = running.length && !isHidden ? w.statusLine(running.length, tokens(running.reduce((n, a) => n + total(a.tokens), 0)), stalled, warn()) : undefined
+  const text = running.length && !isHidden && !isQuiet ? w.statusLine(running.length, tokens(running.reduce((n, a) => n + total(a.tokens), 0)), stalled, warn()) : undefined
   if (text !== shownStatus) {
     shownStatus = text
     $.ui.status(text)
@@ -269,6 +271,7 @@ const pressVerb = async ($: EngineInterface, v: Verb) => {
 export const register: Register = (on, options) => {
   stallMs = Math.max(1, Number(options.stallMinutes) || 5) * 60_000
   isOn = options.enabled !== false
+  isQuiet = options.quiet === true
   lang = langOf(options.language)
   style = styleOf(options.icons)
 

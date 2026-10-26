@@ -197,6 +197,7 @@ pelo nome, e os atalhos. Comandos:
 /pad place header | prompt | pane           onde o menu aparece: sob o cabeçalho, logo acima do prompt ou num painel
 /pad hide | show                            esconde o menu ou mostra de novo
 /pad off | on                               desliga ou liga o launchpad em todas as conversas
+/pad quiet [on | off]                       modo discreto: nenhum mod desenha nada sozinho; um chip na linha de dica traz tudo de volta
 ```
 
 ![launchpad: o menu de boas-vindas sob o cabeçalho, a linha acima do prompt, o ◆ pad e o painel de controle](screenshots/launchpad.svg)

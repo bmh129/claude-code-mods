@@ -49,6 +49,8 @@ let keepHistory = false
 let isOn = true
 /** On but silent: no status line and no toast. The pane still opens. Kept in the store. */
 let isHidden = false
+/** The `quiet` option, set in every mod by `/pad quiet`: hides what the mod draws by itself, as hide does. `show` does not undo it. */
+let isQuiet = false
 let root = ''
 
 const storeKey = () => `runs:${root}`
@@ -62,7 +64,7 @@ const isRun = (x: unknown): x is Run =>
   typeof x === 'object' && x !== null && typeof (x as Run).n === 'number' && typeof (x as Run).runner === 'string' && Array.isArray((x as Run).failures)
 
 const show = ($: EngineInterface, list: readonly Run[]) => {
-  const text = isHidden ? undefined : statusText(list, lang)
+  const text = isHidden || isQuiet ? undefined : statusText(list, lang)
   if (text === shownStatus) return
   shownStatus = text
   $.ui.status(text)
@@ -113,9 +115,9 @@ const add = async ($: EngineInterface, parsed: Parsed, meta: Omit<Run, keyof Par
   if (!run) return
   if (!run.isDemo) await save($, list)
   const green = greenText(list, run, lang)
-  if (green && !isHidden) $.ui.toast(`${green} /${COMMAND}`, { timeoutMs: 8000 })
+  if (green && !isHidden && !isQuiet) $.ui.toast(`${green} /${COMMAND}`, { timeoutMs: 8000 })
   const red = regressionToast ? redText(list, run, lang) : null
-  if (red && !isHidden) $.ui.toast(`${red} /${COMMAND}`, { timeoutMs: 8000 })
+  if (red && !isHidden && !isQuiet) $.ui.toast(`${red} /${COMMAND}`, { timeoutMs: 8000 })
 }
 
 const DEMO_NAMES = [
@@ -227,6 +229,7 @@ export const register: Register = (on, options) => {
   regressionToast = options.regressionToast === true
   keepHistory = options.keepHistory === true
   isOn = options.enabled !== false
+  isQuiet = options.quiet === true
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)

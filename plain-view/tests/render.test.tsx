@@ -1402,3 +1402,16 @@ test('hide leaves the demo card alone, so the person can see what it looks like'
   await run($, 'demo')
   expect(await card($)).toContain('Demo:')
 })
+
+// The quiet option, set in every mod by /pad quiet: the card stays away like hide, and `show` does not undo it.
+test('quiet: the plan card goes away while rows still fold, and show does not undo it', { options: { enabled: true, language: 'pt-BR', icons: 'symbol', quiet: true } }, async ($, on) => {
+  engine(on)
+  mock.store(on)
+  await start($)
+  await ask($)
+  await plan($)
+  expect(await card($)).not.toContain('Montar o painel do tempo')
+  expect(await row($, 'ToolUse', toolUse('Read'))).not.toContain('Read')
+  await run($, 'show')
+  expect(await card($)).not.toContain('Montar o painel do tempo')
+})

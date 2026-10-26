@@ -457,3 +457,17 @@ test('off: dialogs are not counted, but the command still answers', { options: {
   expect((await run($, 'off')).text).toBe('allowlist is already off.')
   expect((await run($, 'on')).text).toBe('allowlist on · /allowlist off turns it off')
 })
+
+// The quiet option, set in every mod by /pad quiet: silent like hide, and `show` does not undo it.
+test('quiet: it keeps counting, with no toast and no note in the dialog, and show does not undo it', { options: { quiet: true } }, async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  for (let i = 0; i < 6; i++) await $.tool.call({ tool: 'Bash', command: `./mvnw test -Dtest=T${i}` } as never)
+  expect(world.notices).toHaveLength(0)
+  expect(world.toasts).toHaveLength(0)
+  expect((await run($, '')).text).toContain(RULE)
+  await run($, 'show')
+  await $.tool.call({ tool: 'Bash', command: './mvnw test -Dtest=T7' } as never)
+  expect(world.notices).toHaveLength(0)
+})

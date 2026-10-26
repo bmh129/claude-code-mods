@@ -333,3 +333,19 @@ test('a refused option says why', async ($, on) => {
   await start($)
   expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('Could not change the option: managed by policy')
 })
+
+// The quiet option, set in every mod by /pad quiet: silent like hide, and `show` does not undo it.
+test('quiet: no status line and no toast, the run is still counted, and show does not undo it', { options: { quiet: true } }, async ($, on) => {
+  const { w } = world(on)
+  await start($)
+  await vitest($, 'tu1')
+  expect(w.statuses.at(-1)).toBeUndefined()
+  w.output = GREEN
+  await vitest($, 'tu2')
+  expect(w.toasts).toEqual([])
+  await $.command.run({ ...RUN, args: 'show' } as never)
+  expect(w.statuses.at(-1)).toBeUndefined()
+  const pane = await mount($)
+  expect(flat(JSON.parse(JSON.stringify(await pane.drawn())))).toContain('43/43')
+  await pane.unmount()
+})

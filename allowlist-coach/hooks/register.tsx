@@ -72,6 +72,8 @@ let root = ''
 let isOn = true
 /** On but silent: it counts, but offers no toast and writes no note in the dialog. Kept in the store. */
 let isHidden = false
+/** The `quiet` option, set in every mod by `/pad quiet`: hides what the mod draws by itself, as hide does. `show` does not undo it. */
+let isQuiet = false
 const KEY_HIDDEN = 'hidden'
 // The last first row the list can start at, from the last render: the wheel stops there.
 let lastStart = 0
@@ -300,6 +302,7 @@ export const register: Register = (on, options) => {
   lang = langOf(options.language)
   setThreshold(options.threshold)
   isOn = options.enabled !== false
+  isQuiet = options.quiet === true
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -348,7 +351,7 @@ export const register: Register = (on, options) => {
     const entry = (await read($, entries))[key]!
     if (before !== 'ready' && entry.state === 'counting' && status(entry, await read($, configured)) === 'ready') {
       await save($, list => setState(list, key, 'offered'))
-      if (!isHidden) $.ui.toast(WORDS[lang].offered(key, entry.approved), { timeoutMs: 10000 })
+      if (!isHidden && !isQuiet) $.ui.toast(WORDS[lang].offered(key, entry.approved), { timeoutMs: 10000 })
     }
     return result
   }).catch(($, e, next) => next(e))
@@ -365,7 +368,7 @@ export const register: Register = (on, options) => {
       if (holdsSecret(call.input) || rules.some(holdsSecret)) break
       call.rules = rules
       const text = noticeFor((await read($, entries))[keyOf(call.rules)], await read($, configured), lang)
-      if (text && !isHidden) {
+      if (text && !isHidden && !isQuiet) {
         try {
           $.ui.notice(id, text)
         } catch {

@@ -107,6 +107,8 @@ let style: IconStyle = 'emoji'
 let isOn = false
 /** On, with the rows folding, but the card above the prompt stays away. Kept in the store. */
 let isHidden = false
+/** The `quiet` option, set in every mod by `/pad quiet`: hides what the mod draws by itself, as hide does. `show` does not undo it. */
+let isQuiet = false
 const KEY_HIDDEN = 'hidden'
 let palette: Palette = paletteOf(undefined)
 let animate = true
@@ -337,6 +339,7 @@ export const register: Register = (on, options) => {
   lang = langOf(options.language)
   style = styleOf(options.icons)
   isOn = options.enabled === true
+  isQuiet = options.quiet === true
   palette = paletteOf(options.palette)
   animate = options.animation !== false
   askForTasks = options.askForTasks !== false
@@ -508,7 +511,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const t = await read($, turn)
-    if ((!isOn || isHidden) && !t?.isDemo) return next(e)
+    if ((!isOn || isHidden || isQuiet) && !t?.isDemo) return next(e)
     // A demo's card shows no agents.
     const team = t?.isDemo ? [] : await read($, agents)
     const view = { mode: requestMode, isOpen: await read($, unfolded) }
