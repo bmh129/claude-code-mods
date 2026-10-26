@@ -85,8 +85,8 @@ test('five approvals offer the rule once, and Add writes settings.local.json', a
 
   for (let i = 0; i < 6; i++) await $.tool.call({ tool: 'Bash', command: `./mvnw test -Dtest=T${i}` } as never)
 
-  expect(world.notices[0]).toBe(`allowlist-coach: ●○○○○ 1/5 approvals · 4 more and /allowlist offers ${RULE}`)
-  expect(world.notices[3]).toContain('●●●●○ 4/5')
+  expect(world.notices[0]).toBe(`allowlist-coach: █░░░░ 1/5 approvals · 4 more and /allowlist offers ${RULE}`)
+  expect(world.notices[3]).toContain('████░ 4/5')
   expect(world.toasts.filter(t => t.includes(RULE))).toHaveLength(1)
   expect(world.toasts[0]).toContain('5 times')
 
@@ -191,7 +191,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(shown).toContain('ready 1')
     expect(shown).toContain(RULE)
     expect(shown).toContain('e.g. ./mvnw test -pl core · 12 min ago')
-    expect(shown).toContain('●○○○○ 1/5')
+    expect(shown).toContain('█░░░░ 1/5')
     expect(shown).toContain('counting  ')
 
     await pane.press({ key: 'verb:reset' })
@@ -315,7 +315,7 @@ test('reset <n> sets one rule back to zero, after asking', async ($, on) => {
   await pane.press({ key: 'zero-1' })
   expect(world.asked.at(-1)!.question).toBe(`Reset the count of ${RULE} (3 approvals, 0 refusals)?`)
   expect(world.toasts.at(-1)).toBe(`allowlist-coach: count of ${RULE} reset.`)
-  expect(JSON.stringify(await pane.drawn())).toContain('○○○○○ 0/5')
+  expect(JSON.stringify(await pane.drawn())).toContain('░░░░░ 0/5')
   await pane.unmount()
   expect((await run($, '')).text).toContain('Bash(npm run lint)')
 })
@@ -376,7 +376,7 @@ test('the threshold option sets how many approvals an offer takes', { options: {
   engine($, on, world, () => true)
   await start($)
   for (let i = 0; i < 3; i++) await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
-  expect(world.notices[0]).toContain('●○○ 1/3')
+  expect(world.notices[0]).toContain('█░░ 1/3')
   expect(world.toasts.filter(t => t.includes(RULE))).toHaveLength(1)
   const pane = await mount($)
   expect(JSON.stringify(await pane.drawn())).toContain('after 3 approvals')
@@ -390,7 +390,7 @@ test('Portuguese from LANG: the dialog line, the questions and the pane', async 
   await start($)
   for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: './mvnw test' } as never)
 
-  expect(world.notices[2]).toBe(`allowlist-coach: ●●●○○ 3/5 aprovações · faltam 2 para /allowlist oferecer ${RULE}`)
+  expect(world.notices[2]).toBe(`allowlist-coach: ███░░ 3/5 aprovações · faltam 2 para /allowlist oferecer ${RULE}`)
   expect(world.toasts[0]).toContain('Você aprovou')
   const pane = await mount($)
   const shown = JSON.stringify(await pane.drawn())

@@ -5,7 +5,7 @@
 //             is not the person); classic.PostToolUse(Failure) marks the ones that ran. When
 //             the call resolves, an asked call that ran is an approval, one that did not, a
 //             refusal. Counts live in $.store per project root, across sessions.
-//   dialog    a line under the open dialog: approvals so far, `●●●○○ 3/5`, toward the offer.
+//   dialog    a line under the open dialog: approvals so far, `███░░ 3/5`, toward the offer.
 //   toast     once, when a rule reaches `threshold` approvals (5 by default) with no refusal.
 //   /allowlist  pane with every rule, numbered, ready ones first, each with the last call that
 //             asked and when, and its actions: allow, dismiss, reset count, remove from allow.
