@@ -26,7 +26,7 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 import type { Parsed, Run } from '../types'
 import { commandLine, durationSpark, fixed, flaky, fresh, greenText, parseRun, quietPass, record, redText, runnerOf, runnersOf, score, spark, statusText, trail, wholeCommand } from './hud'
 import type { Lang, Verb } from './ui'
-import { clip, elapsed, fillArgs, langOf, linesOf, verbRow } from './ui'
+import { clip, elapsed, fillArgs, langOf, figLead, linesOf, verbRow } from './ui'
 import { switchOf, switchWords } from './switch'
 import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
@@ -312,9 +312,10 @@ export const register: Register = (on, options) => {
     const isEarlier = r !== mine.at(-1)
 
     const isRed = r.failed > 0
+    const failedText = isRed ? w.failed(r.failed) : ''
     const counts = [
       r.passed === null ? (isRed ? '' : w.passedNoCounts) : w.passing(r.passed, r.passed + r.failed),
-      isRed ? w.failed(r.failed) : '',
+      failedText,
       r.skipped ? w.skipped(r.skipped) : '',
     ].filter(Boolean)
     const line = mine.filter(x => x.n <= r.n).slice(-PANE_SPARK)
@@ -343,7 +344,15 @@ export const register: Register = (on, options) => {
         )}
 
         <Box flexDirection="column">
-          <Text color={tone} bold>{`${isRed ? '✗' : '✓'} ${counts.join(' · ')}`}</Text>
+          <Text>
+            <Text color={tone} bold>{`${isRed ? '✗' : '✓'} `}</Text>
+            {counts.map((c, i) => (
+              <Text key={`count:${i}`}>
+                {i > 0 && <Text dimColor> · </Text>}
+                {figLead({ Text }, c, isRed && c === failedText ? 'bad' : 'ok')}
+              </Text>
+            ))}
+          </Text>
           <Box flexDirection="row" flexWrap="wrap" gap={2}>
             <Text dimColor>{clip(`${r.runner} · #${r.n} · ${elapsed(r.durationMs)}${r.agentId ? ` · ${w.subagent}` : ''} · ${r.command}`, width - w.runAgain.length - 2)}</Text>
             <Button key="rerun" plain label={w.runAgain} onPress={() => fill($, w.rerun(r.fullCommand))} />

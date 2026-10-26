@@ -50,7 +50,7 @@ import {
   zero,
 } from './tally'
 import type { Lang, Verb } from './ui'
-import { clip, fillArgs, langOf, linesOf, verbRow, windowOf } from './ui'
+import { clip, fig, fillArgs, langOf, linesOf, verbRow, windowOf } from './ui'
 import { switchOf, switchWords } from './switch'
 import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
@@ -466,8 +466,8 @@ export const register: Register = (on, options) => {
                       <Text color="claude">{progress(r.entry.approved)}</Text>
                     ) : (
                       <Text>
-                        <Text>{`✓${String(r.entry.approved).padStart(3)} `}</Text>
-                        <Text color={r.entry.denied > 0 ? 'warning' : undefined}>{`✗${String(r.entry.denied).padStart(3)}`}</Text>
+                        {fig({ Text }, `✓${String(r.entry.approved).padStart(3)} `, 'ok')}
+                        {fig({ Text }, `✗${String(r.entry.denied).padStart(3)}`, r.entry.denied > 0 ? 'warn' : 'ok')}
                       </Text>
                     )}
                     <Text wrap="truncate-end">{r.key}</Text>

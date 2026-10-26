@@ -1,6 +1,10 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+/** The text of a drawn tree, every node's children joined: a phrase split across a figure and its label reads whole. */
+const flat = (n: unknown): string =>
+  typeof n === 'string' ? n : Array.isArray(n) ? n.map(flat).join('') : n && typeof n === 'object' ? flat((n as { children?: unknown }).children) : ''
+
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const PROPS = { title: 'Tests', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} }
 const RUN = { command: 'test-hud', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } }
@@ -53,8 +57,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const pane = await mount($, surface)
     let drawn = JSON.stringify(await pane.drawn())
     expect(drawn).toContain('Press a failing test to ask for a fix')
-    expect(drawn).toContain('41/43 passing')
-    expect(drawn).toContain('2 failed')
+    expect(flat(JSON.parse(drawn))).toContain('41/43 passing')
+    expect(flat(JSON.parse(drawn))).toContain('2 failed')
     expect(drawn).toContain('src/a.test.ts > parse > commas')
     expect(drawn).toContain('vitest · #1 · 12s')
     expect(drawn).toContain('/test-hud ')
@@ -73,7 +77,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(w.statuses.at(-1)).toBe('✓ tests 43/43 ██▁')
     expect(w.toasts).toEqual(['Tests green: 43/43 (vitest) after 2 red runs in 36s. /test-hud'])
     drawn = JSON.stringify(await pane.drawn())
-    expect(drawn).toContain('43/43 passing')
+    expect(flat(JSON.parse(drawn))).toContain('43/43 passing')
     expect(drawn).not.toContain('Failing')
     expect(drawn).toContain('Fixed since the previous run (2)')
     await pane.unmount()
@@ -100,7 +104,7 @@ test('the verbs: clear waits in the prompt, help answers in the transcript, clos
   const pane = await mount($)
   await pane.press({ key: 'verb:clear' })
   expect(w.fills.at(-1)?.text).toBe('/test-hud clear')
-  expect(JSON.stringify(await pane.drawn())).toContain('41/43 passing')
+  expect(flat(await pane.drawn())).toContain('41/43 passing')
   await pane.press({ key: 'verb:help' })
   expect(w.logs[0]).toBe('/test-hud          open the pane')
   expect(w.logs).toHaveLength(6)
@@ -152,8 +156,8 @@ test('Portuguese from LANG: status line, pane and prompt', async ($, on) => {
   expect(w.statuses.at(-1)).toBe('✗ testes 41/43')
   const pane = await mount($)
   const drawn = JSON.stringify(await pane.drawn())
-  expect(drawn).toContain('41/43 passando')
-  expect(drawn).toContain('2 falharam')
+  expect(flat(JSON.parse(drawn))).toContain('41/43 passando')
+  expect(flat(JSON.parse(drawn))).toContain('2 falharam')
   expect(drawn).toContain('Falhando (2)')
   expect(drawn).toContain('Fechar')
   await pane.press({ key: 'rerun' })
@@ -174,7 +178,7 @@ test('a run in the list shows it, flaky tests are marked, and latest goes back',
   await $.command.run({ ...RUN, args: 'demo' } as never)
   const pane = await mount($)
   let drawn = JSON.stringify(await pane.drawn())
-  expect(drawn).toContain('43/43 passing')
+  expect(flat(JSON.parse(drawn))).toContain('43/43 passing')
   expect(drawn).toContain('duration of the last 6 runs (11s to 14s)')
   expect(drawn).toContain('press one to see it')
 
@@ -210,7 +214,7 @@ test('with two runners, tabs pick which one the pane shows', async ($, on) => {
   await pane.press({ key: 'tab:vitest' })
   drawn = JSON.stringify(await pane.drawn())
   expect(drawn).toContain('▸ vitest')
-  expect(drawn).toContain('41/43 passing')
+  expect(flat(JSON.parse(drawn))).toContain('41/43 passing')
   expect(drawn).toContain('parse > empty')
   expect(drawn).not.toContain('pytest -q')
   await pane.unmount()

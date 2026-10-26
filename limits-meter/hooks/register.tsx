@@ -704,7 +704,7 @@ export const register: Register = (on, options) => {
                 <Text>
                   <Text dimColor>{label(l.kind, lang).padEnd(6)}</Text>
                   <Text color={tone(l.percent)}>{bar(width, l.percent)}</Text>
-                  <Text bold>{` ${pct(l.percent).padStart(4)}`}</Text>
+                  <Text bold color={tone(l.percent)}>{` ${pct(l.percent).padStart(4)}`}</Text>
                   <Text dimColor>{l.resetsAt !== null ? `  ${w.resetsIn(resetIn(l.resetsAt, now, lang))}` : ''}</Text>
                 </Text>
                 {left != null && <Text color="warning">{`      ${w.pace(label(l.kind, lang), resetIn(now + left, now, lang))}`}</Text>}

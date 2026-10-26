@@ -406,7 +406,7 @@ After a change to what a mod draws, regenerate the images:
 Need a mod, skill or agent built for your own workflow or team? I take on custom work: hooks,
 panes, status lines, slash commands, skills and subagents for Claude Code.
 
-- Email: [lucas.rj.fernandes@gmail.com](mailto:lucas.rj.fernandes@gmail.com)
+- Email: [javacomia@gmail.com](mailto:javacomia@gmail.com)
 
 ## YouTube
 
