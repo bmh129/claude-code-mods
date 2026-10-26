@@ -53,7 +53,7 @@ import {
 import type { SortBy } from './watch'
 import { PHRASES, phraseOf } from './phrases'
 import type { IconStyle, Lang, Verb } from './ui'
-import { clip, elapsed, fig, fillArgs, glyph, langOf, lbl, figLead, linesOf, shortModel, styleOf, tokens, verbRow, windowOf } from './ui'
+import { PRIMARY, SECONDARY, clip, elapsed, fig, fillArgs, glyph, langOf, lbl, figLead, linesOf, shortModel, styleOf, tokens, verbRow, windowOf } from './ui'
 import { switchOf, switchWords } from './switch'
 import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
@@ -452,7 +452,7 @@ export const register: Register = (on, options) => {
               <Text dimColor>{`  ${w.leadLine(tokens(total(spentLead)), tokens(spentLead.output))}`}</Text>
             </Text>
             {rows.length > 1 && (
-              <Button key="sort" plain dimColor label={`⇅ ${order === 'start' ? w.sortStart : w.sortTokens}`} onPress={() => update($, sortBy, x => (x === 'start' ? 'tokens' : 'start'))} />
+              <Button key="sort" {...SECONDARY} label={`⇅ ${order === 'start' ? w.sortStart : w.sortTokens}`} onPress={() => update($, sortBy, x => (x === 'start' ? 'tokens' : 'start'))} />
             )}
           </Box>
           {list.length === 0 && <Text dimColor>{`  ${w.empty} ${w.emptyNext}`}</Text>}
@@ -472,7 +472,7 @@ export const register: Register = (on, options) => {
                   {colorOf(a) && <Text color={colorOf(a)}>{'  ■'}</Text>}
                   {a.id.startsWith(DEMO) && <Text color="warning">{`  ${w.demoBadge}`}</Text>}
                   {isStuck && <Text>{'  '}</Text>}
-                  {isStuck && <Button key={`investigate:${a.id}`} plain color="warning" label={w.investigate} onPress={() => investigate(a)} />}
+                  {isStuck && <Button key={`investigate:${a.id}`} {...PRIMARY} label={w.investigate} onPress={() => investigate(a)} />}
                 </Box>
                 <Text>
                   <Text dimColor>{`${rail}   `}</Text>
@@ -515,7 +515,7 @@ export const register: Register = (on, options) => {
             <Box flexDirection="row" gap={2}>
               <Text color="success">{'  ✓'}</Text>
               <Button key="done" plain label={w.finished(done, isOpen)} onPress={() => update($, showDone, x => !x)} />
-              <Button key="clear-done" plain dimColor label={w.clearDone} onPress={() => clear($, 'done')} />
+              <Button key="clear-done" {...SECONDARY} label={w.clearDone} onPress={() => clear($, 'done')} />
             </Box>
           )}
           {total(other) > 0 && <Text dimColor>{`  ${w.otherLoops(tokens(total(other)))}`}</Text>}
@@ -530,8 +530,8 @@ export const register: Register = (on, options) => {
 
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
           {verbRow({ Box, Text, Button }, COMMAND, VERBS, v => pressVerb($, v))}
-          {hasDemo && <Button key="clear-demo" plain dimColor label={w.clearDemo} onPress={() => clear($, 'demo')} />}
-          <Button key="close" role="dismiss" label={w.close} onPress={() => $.ui.close({ id: PANE })} />
+          {hasDemo && <Button key="clear-demo" {...SECONDARY} label={w.clearDemo} onPress={() => clear($, 'demo')} />}
+          <Button key="close" role="dismiss" {...SECONDARY} label={w.close} onPress={() => $.ui.close({ id: PANE })} />
         </Box>
       </Box>
     )

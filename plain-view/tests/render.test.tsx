@@ -1,6 +1,11 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 const NOW = Date.parse('2026-10-09T12:00:00Z')
+
+// A5 (prototype buttons-quiet-a5-a7, variant B): the Buttons of a tree, with the props the variant lives in.
+const buttonsOf = (tree: unknown) =>
+  [...JSON.stringify(tree).matchAll(/"type":"Button","props":(\{[^{}]*\})/g)].map(m => JSON.parse(m[1]!) as { key: string; variant?: string; plain?: boolean })
+const variantOf = (tree: unknown, key: string) => buttonsOf(tree).find(b => b.key === key)?.variant
 const ON = { options: { enabled: true, language: 'pt-BR', icons: 'symbol' } }
 const TASKS = ['Escolher o estilo e o layout da página', 'Ver como a página pega o tempo ao vivo', 'Montar o painel do tempo', 'Publicar e compartilhar o link']
 
@@ -580,6 +585,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const drawn = JSON.stringify(await ui.drawn())
     expect(drawn).toContain('em uso')
     expect(drawn).toContain('use:aurora')
+    expect(variantOf(JSON.parse(drawn), 'use:aurora')).toBe('secondary')
     expect(drawn).not.toContain('use:claude')
     expect(drawn).toContain('/config → plain-view → palette')
     if (surface === 'terminal') expect(drawn).toContain('work:aurora')

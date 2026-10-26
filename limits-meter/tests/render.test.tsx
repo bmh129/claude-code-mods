@@ -37,6 +37,12 @@ const BREAKDOWN = {
 const SWITCH = { from_model: 'claude-sonnet-5-5', to_model: 'claude-opus-5-5', requested_model: 'opus', source: 'command', context_tokens: 0, prompt_cache_warm: false, cache_ttl: '1h', estimated_cache_write_usd: 0, pricing: 'catalog' }
 const MIN = 60_000
 
+
+// A5 (prototype buttons-quiet-a5-a7, variant B): the Buttons of a tree, with the props the variant lives in.
+const buttonsOf = (tree: unknown) =>
+  [...JSON.stringify(tree).matchAll(/"type":"Button","props":(\{[^{}]*\})/g)].map(m => JSON.parse(m[1]!) as { key: string; variant?: string; plain?: boolean })
+const variantOf = (tree: unknown, key: string) => buttonsOf(tree).find(b => b.key === key)?.variant
+
 type World = {
   toasts: string[]
   fills: string[]
@@ -135,11 +141,19 @@ test('from 85% context the band and the pane offer compact, which only fills the
 
   const b = await band($)
   expect(JSON.stringify(await b.drawn())).toContain('compact')
+  const band5 = await b.drawn()
+  expect(variantOf(band5, 'compact')).toBe('primary')
+  expect(variantOf(band5, 'details')).toBe('secondary')
+  expect(variantOf(band5, 'hide')).toBe('secondary')
+  for (const x of buttonsOf(band5).filter(x => x.variant)) expect(x.plain).toBeUndefined()
   await b.press({ key: 'compact' })
   expect(world.fills).toEqual(['/compact [focus]'])
   await b.unmount()
 
   const p = await pane($)
+  const pane5 = await p.drawn()
+  expect(variantOf(pane5, 'compact')).toBe('primary')
+  expect(variantOf(pane5, 'close')).toBe('secondary')
   await p.press({ key: 'compact' })
   expect(world.fills).toEqual(['/compact [focus]', '/compact [focus]'])
   expect(world.logs).toEqual([])

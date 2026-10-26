@@ -33,7 +33,7 @@ import type { CacheClock, ContextGroups, KeepWarm, Samples, Snapshot, Turn, Ttl 
 import type { Setting } from './meter'
 import { addSamples, alerts, bar, barCells, clockOf, contextSpark, effortLevel, gauge, groupContext, heaviest, inferTtl, keepMargin, KEEP_WARM_MAX_MS, KEEP_WARM_TEXT, label, mini, mmss, needsCompact, pace, pct, resetIn, splitOf, summary, switchWarning, toSnapshot, toTurn, tone as toneOf, TTL_MS, TURNS_KEPT } from './meter'
 import type { IconStyle, Lang, Verb } from './ui'
-import { clip, fillArgs, glyph, langOf, linesOf, shortModel, styleOf, tokens, verbRow } from './ui'
+import { PRIMARY, SECONDARY, clip, fillArgs, glyph, langOf, linesOf, shortModel, styleOf, tokens, verbRow } from './ui'
 import { switchOf, switchWords } from './switch'
 import { COMMAND, WORDS } from './words'
 
@@ -541,11 +541,11 @@ export const register: Register = (on, options) => {
       ) : null
 
     const verbs = [
-      ...(clock?.state === 'cooling' && !kept ? [<Button key="keep" label={w.keepWarm} plain color="warning" onPress={() => void pressKeep($)} />] : []),
-      ...(kept ? [<Button key="keep-stop" label={w.keepStop} plain dimColor onPress={() => void stopKeep($, 'manual')} />] : []),
-      ...(needsCompact(s) ? [<Button key="compact" label={w.compact} plain color="warning" onPress={() => fill($, w.compactFill)} />] : []),
-      <Button key="details" label={w.details} plain dimColor onPress={() => open($)} />,
-      <Button key="hide" label={w.hide} plain dimColor onPress={() => setHidden($, true)} />,
+      ...(clock?.state === 'cooling' && !kept ? [<Button key="keep" label={w.keepWarm} {...SECONDARY} onPress={() => void pressKeep($)} />] : []),
+      ...(kept ? [<Button key="keep-stop" label={w.keepStop} {...SECONDARY} onPress={() => void stopKeep($, 'manual')} />] : []),
+      ...(needsCompact(s) ? [<Button key="compact" label={w.compact} {...PRIMARY} onPress={() => fill($, w.compactFill)} />] : []),
+      <Button key="details" label={w.details} {...SECONDARY} onPress={() => open($)} />,
+      <Button key="hide" label={w.hide} {...SECONDARY} onPress={() => setHidden($, true)} />,
     ]
 
     if (format === 'compact') {
@@ -722,8 +722,8 @@ export const register: Register = (on, options) => {
                   {clockView(Text, clock, keep !== null)}
                   <Text dimColor>{`  ${w.cacheOf(c.ttl === '1h' ? '1 h' : '5 min')}`}</Text>
                 </Text>
-                {keep === null && clock.state !== 'cold' && <Button key="keep" label={w.keepWarm} plain color="warning" onPress={() => void pressKeep($)} />}
-                {keep !== null && <Button key="keep-stop" label={w.keepStop} plain dimColor onPress={() => void stopKeep($, 'manual')} />}
+                {keep === null && clock.state !== 'cold' && <Button key="keep" label={w.keepWarm} {...SECONDARY} onPress={() => void pressKeep($)} />}
+                {keep !== null && <Button key="keep-stop" label={w.keepStop} {...SECONDARY} onPress={() => void stopKeep($, 'manual')} />}
               </Box>
               <Text dimColor>{sentence}</Text>
             </Box>
@@ -751,7 +751,7 @@ export const register: Register = (on, options) => {
               <Text bold>{` ${pct(s.contextPercent).padStart(4)}`}</Text>
               <Text dimColor>{s.contextTokens !== null ? `  ${w.ofWindow(tokens(s.contextTokens), tokens(s.contextWindow))}` : ''}</Text>
             </Text>
-            {needsCompact(s) && <Button key="compact" label={w.compact} plain color="warning" onPress={() => fill($, w.compactFill)} />}
+            {needsCompact(s) && <Button key="compact" label={w.compact} {...PRIMARY} onPress={() => fill($, w.compactFill)} />}
           </Box>
           {trend.length > 1 && (
             <Text>
@@ -826,7 +826,7 @@ export const register: Register = (on, options) => {
 
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
           {verbRow({ Box, Text, Button }, COMMAND, VERBS, v => pressVerb($, v))}
-          <Button key="close" role="dismiss" label={w.close} onPress={() => $.ui.close({ id: PANE })} />
+          <Button key="close" role="dismiss" {...SECONDARY} label={w.close} onPress={() => $.ui.close({ id: PANE })} />
         </Box>
       </Box>
     )

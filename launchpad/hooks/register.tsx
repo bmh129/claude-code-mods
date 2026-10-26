@@ -237,6 +237,8 @@ async function add($: EngineInterface, p: Pad): Promise<string | null> {
  */
 const BOX_HOVER = { borderColor: 'claude', borderDimColor: false, backgroundColor: 'claude' } as const
 const LABEL_HOVER = { color: 'inverseText', bold: true } as const
+/** A5: an action that is not the card's decision, in a neutral box. Never `plain`: a plain Button ignores `variant`. */
+const SECONDARY = { variant: 'secondary' } as const
 
 /**
  * /pad's arguments in the row under the menu. None waits in the prompt for typing: `add` and
@@ -859,7 +861,7 @@ export const register: Register = (on, options) => {
         {(await read($, isOff)) ? <Text dimColor>{w.isOff}</Text> : visible.length === 0 ? <Text dimColor>{w.empty}</Text> : body}
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
           {padRow($, { Box, Text, Button }, more, await read($, isOff))}
-          <Button key="close" role="dismiss" label={w.pane.close} onPress={() => $.ui.close({ id: MENU_PANE })} />
+          <Button key="close" role="dismiss" {...SECONDARY} label={w.pane.close} onPress={() => $.ui.close({ id: MENU_PANE })} />
         </Box>
       </Box>
     )
@@ -1023,9 +1025,9 @@ export const register: Register = (on, options) => {
         </Box>
 
         <Box flexDirection="row" gap={2}>
-          <Button key="reset" label={w.pane.reset} onPress={() => saveMenu($, defaults(lang))} />
-          <Button key="panel" label={w.modsSection.back} onPress={() => openPanel($)} />
-          <Button key="close" role="dismiss" label={w.pane.close} onPress={() => $.ui.close({ id: PANE })} />
+          <Button key="reset" {...SECONDARY} label={w.pane.reset} onPress={() => saveMenu($, defaults(lang))} />
+          <Button key="panel" {...SECONDARY} label={w.modsSection.back} onPress={() => openPanel($)} />
+          <Button key="close" role="dismiss" {...SECONDARY} label={w.pane.close} onPress={() => $.ui.close({ id: PANE })} />
         </Box>
       </Box>
     )

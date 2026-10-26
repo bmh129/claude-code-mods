@@ -50,7 +50,7 @@ import {
   zero,
 } from './tally'
 import type { Lang, Verb } from './ui'
-import { clip, fig, fillArgs, langOf, linesOf, verbRow, windowOf } from './ui'
+import { PRIMARY, SECONDARY, clip, fig, fillArgs, langOf, linesOf, verbRow, windowOf } from './ui'
 import { switchOf, switchWords } from './switch'
 import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
@@ -472,13 +472,13 @@ export const register: Register = (on, options) => {
                     )}
                     <Text wrap="truncate-end">{r.key}</Text>
                     {risk && <Text color="warning" wrap="truncate-end">{`(${w.risk(risk)})`}</Text>}
-                    {r.status === 'ready' && <Button key={`allow-${r.n}`} label={w.allow} onPress={() => toast(allow($, r.key))} />}
+                    {r.status === 'ready' && <Button key={`allow-${r.n}`} label={w.allow} {...PRIMARY} onPress={() => toast(allow($, r.key))} />}
                   </Box>
                   <Box flexDirection="row" gap={2}>
                     <Text dimColor wrap="truncate-end">{`   ${clip(w.example(r.entry.example, w.ago(now - r.entry.lastAt)), Math.max(20, width - 44))}`}</Text>
-                    {canDismiss && <Button key={`dismiss-${r.n}`} label={w.dismiss} plain dimColor onPress={() => toast(dismiss($, r.key))} />}
-                    {hasCounts && <Button key={`zero-${r.n}`} label={w.resetCount} plain dimColor onPress={() => toast(zeroOne($, r.key))} />}
-                    {r.entry.state === 'added' && <Button key={`remove-${r.n}`} label={w.remove} plain dimColor onPress={() => toast(remove($, r.key))} />}
+                    {canDismiss && <Button key={`dismiss-${r.n}`} label={w.dismiss} {...SECONDARY} onPress={() => toast(dismiss($, r.key))} />}
+                    {hasCounts && <Button key={`zero-${r.n}`} label={w.resetCount} {...SECONDARY} onPress={() => toast(zeroOne($, r.key))} />}
+                    {r.entry.state === 'added' && <Button key={`remove-${r.n}`} label={w.remove} {...SECONDARY} onPress={() => toast(remove($, r.key))} />}
                   </Box>
                 </Box>
               )
@@ -494,7 +494,7 @@ export const register: Register = (on, options) => {
         )}
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
           {verbRow({ Box, Text, Button }, COMMAND, verbs(lang), v => pressVerb($, v))}
-          <Button key="close" role="dismiss" label={w.close} onPress={() => $.ui.close({ id: PANE })} />
+          <Button key="close" role="dismiss" {...SECONDARY} label={w.close} onPress={() => $.ui.close({ id: PANE })} />
         </Box>
       </Box>
     )

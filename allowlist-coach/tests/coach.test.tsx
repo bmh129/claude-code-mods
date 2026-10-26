@@ -457,3 +457,21 @@ test('off: dialogs are not counted, but the command still answers', { options: {
   expect((await run($, 'off')).text).toBe('allowlist is already off.')
   expect((await run($, 'on')).text).toBe('allowlist on · /allowlist off turns it off')
 })
+
+// A5 (prototype buttons-quiet-a5-a7, variant B): one primary per card, the other actions boxed.
+const buttonsOf = (tree: unknown) =>
+  [...JSON.stringify(tree).matchAll(/"type":"Button","props":(\{[^{}]*\})/g)].map(m => JSON.parse(m[1]!) as { key: string; variant?: string; plain?: boolean })
+
+for (const surface of ['terminal', 'desktop']) {
+  test(`A5: allow is the only primary, close is secondary, no action is plain on ${surface}`, async ($, on) => {
+    const world = fresh()
+    engine($, on, world, () => true)
+    await start($, surface)
+    for (let i = 0; i < 5; i++) await $.tool.call({ tool: 'Bash', command: './mvnw test -pl core' } as never)
+
+    const buttons = buttonsOf(await (await mount($, surface)).drawn())
+    expect(buttons.filter(b => b.variant === 'primary').map(b => b.key)).toEqual(['allow-1'])
+    expect(buttons.find(b => b.key === 'close')?.variant).toBe('secondary')
+    for (const b of buttons.filter(b => b.variant)) expect(b.plain).toBeUndefined()
+  })
+}

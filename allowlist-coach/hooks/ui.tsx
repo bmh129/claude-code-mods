@@ -87,6 +87,19 @@ export function verbRow(
   )
 }
 
+/**
+ * A5: the one decision of a card (allow, compact, investigate, run again). The terminal draws
+ * `[ label ]` in the accent color, a desktop its own filled primary button. One per card, and only
+ * where there is a decision: spending plan is never primary.
+ */
+export const PRIMARY = { variant: 'primary' } as const
+
+/**
+ * A5: every other action of a card, in a neutral box. Never with `plain`: a plain Button ignores
+ * `variant` and draws as text.
+ */
+export const SECONDARY = { variant: 'secondary' } as const
+
 /** 950, 1.2k, 46k, 1.2M. */
 export const tokens = (n: number) => {
   if (n < 1000) return String(n)

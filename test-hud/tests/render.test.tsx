@@ -6,6 +6,11 @@ const flat = (n: unknown): string =>
   typeof n === 'string' ? n : Array.isArray(n) ? n.map(flat).join('') : n && typeof n === 'object' ? flat((n as { children?: unknown }).children) : ''
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
+
+// A5 (prototype buttons-quiet-a5-a7, variant B): the Buttons of a tree, with the props the variant lives in.
+const buttonsOf = (tree: unknown) =>
+  [...JSON.stringify(tree).matchAll(/"type":"Button","props":(\{[^{}]*\})/g)].map(m => JSON.parse(m[1]!) as { key: string; variant?: string; plain?: boolean })
+const variantOf = (tree: unknown, key: string) => buttonsOf(tree).find(b => b.key === key)?.variant
 const PROPS = { title: 'Tests', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} }
 const RUN = { command: 'test-hud', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } }
 const CMD = 'npx vitest run --reporter=verbose src/a.test.ts src/b.test.ts src/c.test.ts src/d.test.ts'
@@ -79,6 +84,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     drawn = JSON.stringify(await pane.drawn())
     expect(flat(JSON.parse(drawn))).toContain('43/43 passing')
     expect(drawn).not.toContain('Failing')
+    expect(variantOf(JSON.parse(drawn), 'rerun')).toBe('secondary') // green: nothing to decide
+    expect(variantOf(JSON.parse(drawn), 'close')).toBe('secondary')
     expect(drawn).toContain('Fixed since the previous run (2)')
     await pane.unmount()
   })
@@ -89,6 +96,11 @@ test('a failing test and run again fill the prompt with the whole command; nothi
   await start($)
   await vitest($, 'tu1')
   const pane = await mount($)
+  const red = await pane.drawn()
+  expect(variantOf(red, 'rerun')).toBe('primary') // red: run again is the decision
+  expect(buttonsOf(red).filter(b => b.variant === 'primary')).toHaveLength(1)
+  expect(variantOf(red, 'close')).toBe('secondary')
+  for (const b of buttonsOf(red).filter(b => b.variant)) expect(b.plain).toBeUndefined()
   await pane.press({ key: 'fix:src/a.test.ts > parse > empty' })
   expect(w.fills.at(-1)?.text).toBe(`Investigate and fix the failure in src/a.test.ts > parse > empty. Command: ${CMD}`)
   await pane.press({ key: 'rerun' })

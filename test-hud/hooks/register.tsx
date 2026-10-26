@@ -26,7 +26,7 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 import type { Parsed, Run } from '../types'
 import { commandLine, durationSpark, fixed, flaky, fresh, greenText, parseRun, quietPass, record, redText, runnerOf, runnersOf, score, spark, statusText, trail, wholeCommand } from './hud'
 import type { Lang, Verb } from './ui'
-import { clip, elapsed, fillArgs, langOf, figLead, linesOf, verbRow } from './ui'
+import { PRIMARY, SECONDARY, clip, elapsed, fillArgs, langOf, figLead, linesOf, verbRow } from './ui'
 import { switchOf, switchWords } from './switch'
 import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
@@ -285,7 +285,7 @@ export const register: Register = (on, options) => {
     const footer = (
       <Box flexDirection="row" flexWrap="wrap" gap={2}>
         {verbRow({ Box, Text, Button }, COMMAND, VERBS, v => pressVerb($, v))}
-        <Button key="close" role="dismiss" label={w.close} onPress={() => $.ui.close({ id: PANE })} />
+        <Button key="close" role="dismiss" {...SECONDARY} label={w.close} onPress={() => $.ui.close({ id: PANE })} />
       </Box>
     )
 
@@ -354,8 +354,8 @@ export const register: Register = (on, options) => {
             ))}
           </Text>
           <Box flexDirection="row" flexWrap="wrap" gap={2}>
-            <Text dimColor>{clip(`${r.runner} · #${r.n} · ${elapsed(r.durationMs)}${r.agentId ? ` · ${w.subagent}` : ''} · ${r.command}`, width - w.runAgain.length - 2)}</Text>
-            <Button key="rerun" plain label={w.runAgain} onPress={() => fill($, w.rerun(r.fullCommand))} />
+            <Text dimColor>{clip(`${r.runner} · #${r.n} · ${elapsed(r.durationMs)}${r.agentId ? ` · ${w.subagent}` : ''} · ${r.command}`, width - w.runAgain.length - 6)}</Text>
+            <Button key="rerun" {...(isRed ? PRIMARY : SECONDARY)} label={w.runAgain} onPress={() => fill($, w.rerun(r.fullCommand))} />
           </Box>
           {isEarlier && (
             <Box flexDirection="row" gap={2}>

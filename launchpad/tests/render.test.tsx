@@ -1,6 +1,11 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+// A5 (prototype buttons-quiet-a5-a7, variant B): the Buttons of a tree, with the props the variant lives in.
+const buttonsOf = (tree: unknown) =>
+  [...JSON.stringify(tree).matchAll(/"type":"Button","props":(\{[^{}]*\})/g)].map(m => JSON.parse(m[1]!) as { key: string; variant?: string; plain?: boolean })
+const variantOf = (tree: unknown, key: string) => buttonsOf(tree).find(b => b.key === key)?.variant
+
 // /pad's own output row, as the transcript hands it to the hook.
 const ROW = { command: 'pad', args: '', text: 'Menu de atalhos do launchpad.', isErrored: false }
 const COMMANDS = [
@@ -180,6 +185,10 @@ test('/pad configuration opens the pane: order, remove, filter and add', async (
   const list = (await pad($, 'list')).text ?? ''
   expect(list.split('\n').map(l => l.split('  ')[1])).toEqual(['/context', '/compact', '@Explore', '/code-review'])
 
+  const config5 = await ui.drawn()
+  expect(variantOf(config5, 'reset')).toBe('secondary')
+  expect(variantOf(config5, 'close')).toBe('secondary')
+  expect(buttonsOf(config5).filter(b => b.variant === 'primary')).toHaveLength(0) // no decision: shortcuts are peers
   await ui.press({ key: 'close' })
   expect(w.closed).toEqual(['launchpad'])
   await ui.unmount()

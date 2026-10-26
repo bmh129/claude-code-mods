@@ -75,7 +75,7 @@ import type { RequestMode } from './plan'
 import type { Setting, SettingKey, SettingValue } from './settings'
 import { awayFromDefaults, SETTINGS, settingsOf, tabOf, TABS } from './settings'
 import type { IconStyle, Lang, Verb } from './ui'
-import { langOf, linesOf, styleOf, verbRow } from './ui'
+import { SECONDARY, langOf, linesOf, styleOf, verbRow } from './ui'
 import { switchOf, switchWords } from './switch'
 import { COMMAND, MODE, WATCH, WORDS } from './words'
 
@@ -605,7 +605,7 @@ export const register: Register = (on, options) => {
                 {inUse ? (
                   <Text color="success">{w.inUse}</Text>
                 ) : (
-                  <Button key={`use:${p.id}`} label={w.use} onPress={() => quietly(runCommand($, `palette ${p.id}`).then(r => $.ui.toast(r.text ?? '')))} />
+                  <Button key={`use:${p.id}`} {...SECONDARY} label={w.use} onPress={() => quietly(runCommand($, `palette ${p.id}`).then(r => $.ui.toast(r.text ?? '')))} />
                 )}
                 <Text dimColor>{p.hint[lang]}</Text>
               </Box>

@@ -6,6 +6,11 @@ const flat = (n: unknown): string =>
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const MIN = 60_000
+
+// A5 (prototype buttons-quiet-a5-a7, variant B): the Buttons of a tree, with the props the variant lives in.
+const buttonsOf = (tree: unknown) =>
+  [...JSON.stringify(tree).matchAll(/"type":"Button","props":(\{[^{}]*\})/g)].map(m => JSON.parse(m[1]!) as { key: string; variant?: string; plain?: boolean })
+const variantOf = (tree: unknown, key: string) => buttonsOf(tree).find(b => b.key === key)?.variant
 const PROPS = { title: 'Agents', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} }
 const RUN = { command: 'watch', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } }
 const SPAWN = { tool_use_id: 'tu1', prompt: 'go', description: 'Map the API routes', subagentType: 'Explore', provider: { plugin: 'engine', tier: 'core' }, parentModel: 'claude-opus-5-5', background: true, fork: false }
@@ -180,6 +185,11 @@ test('share bar, an opened row with its tool calls, and investigate on a stalled
   let drawn = JSON.stringify(await pane.drawn())
   expect(drawn).toContain('Fix the flaky test 56%')
   expect(drawn).toContain('Map the API routes 32%')
+  expect(variantOf(JSON.parse(drawn), 'investigate:demo-2')).toBe('primary')
+  expect(buttonsOf(JSON.parse(drawn)).filter(b => b.variant === 'primary')).toHaveLength(1)
+  expect(variantOf(JSON.parse(drawn), 'sort')).toBe('secondary')
+  expect(variantOf(JSON.parse(drawn), 'close')).toBe('secondary')
+  for (const b of buttonsOf(JSON.parse(drawn)).filter(b => b.variant)) expect(b.plain).toBeUndefined()
 
   await pane.press({ key: 'open:demo-2' })
   drawn = JSON.stringify(await pane.drawn())
