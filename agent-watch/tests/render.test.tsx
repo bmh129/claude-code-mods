@@ -1,5 +1,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+/** The text of a drawn tree, every node's children joined: a phrase split across a figure and its label reads whole. */
+const flat = (n: unknown): string =>
+  typeof n === 'string' ? n : Array.isArray(n) ? n.map(flat).join('') : n && typeof n === 'object' ? flat((n as { children?: unknown }).children) : ''
+
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const MIN = 60_000
 const PROPS = { title: 'Agents', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} }
@@ -46,7 +50,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(drawn).toContain('Map the API routes')
     expect(drawn).toContain('haiku 4.5')
     expect(drawn).toContain('44k') // 2000 + 1500 + 40000 + 500
-    expect(drawn).toContain('1 tool')
+    expect(flat(JSON.parse(drawn))).toContain('1 tool')
     expect(drawn).toContain('lead')
     expect(statuses.at(-1)).toBe('◇ 1 agent · 44k')
 
@@ -154,9 +158,9 @@ test('Portuguese from LANG, and ! for the warning in a JetBrains terminal', asyn
   expect(statuses.at(-1)).toBe('◇ 2 agentes · 365k · ! 1 travado')
   const pane = await $.ui.mount({ plugin: 'agent-watch', surface: 'terminal', component: 'Pane', requestId: 'agent-watch', props: PROPS, viewport: { columns: 102, rows: 40 } } as never)
   const drawn = JSON.stringify(await pane.drawn())
-  expect(drawn).toContain('2 rodando · 1 concluído')
+  expect(flat(JSON.parse(drawn))).toContain('2 rodando · 1 concluído')
   expect(drawn).toContain('1 concluído ▸')
-  expect(drawn).toContain('9 ferramentas (2 com erro)')
+  expect(flat(JSON.parse(drawn))).toContain('9 ferramentas (2 com erro)')
   expect(drawn).toContain('limpar demo')
   expect(drawn).toContain('Fechar')
   await clock.advance(5000)
