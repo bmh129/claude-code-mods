@@ -268,20 +268,31 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
     const iconColor = r.kind === 'done' ? 'success' : r.kind === 'now' ? 'claude' : undefined
     const mode: BarMode = r.kind === 'done' ? 'ok' : r.kind === 'now' ? 'work' : 'off'
     const isNow = r.kind === 'now'
+    // The icon, the subject and the bar keep their columns; only the status shrinks, cut on one
+    // row. Left to shrink, the subject took the squeeze and wrapped a word or a letter a row.
     return (
       <Box key={`row${i}`} flexDirection="row">
-        <Text color={iconColor} dimColor={iconColor === undefined}>{`${glyph(o.icons, icon)} `}</Text>
-        <Text bold={isNow} dimColor={r.kind !== 'done' && !isNow}>{clip(r.text, L.text).padEnd(L.text)}</Text>
-        <Text> </Text>
-        {bar(`bar${i}`, L.item, r.frac, mode)}
-        <Text>  </Text>
-        <Text>
-          <Text bold={isNow} color={isNow ? tone('work') : undefined} dimColor={r.kind === 'next' || r.kind === 'later' || r.kind === 'halted'}>{r.status}</Text>
-          {isNow && r.doing ? <Text dimColor>{` · ${clip(r.doing, inner >= 100 ? 40 : 16)}`}</Text> : null}
-        </Text>
+        <Box flexShrink={0} flexDirection="row">
+          <Text color={iconColor} dimColor={iconColor === undefined}>{`${glyph(o.icons, icon)} `}</Text>
+          <Text bold={isNow} dimColor={r.kind !== 'done' && !isNow}>{clip(r.text, L.text).padEnd(L.text)}</Text>
+          <Text> </Text>
+          {bar(`bar${i}`, L.item, r.frac, mode)}
+          <Text>  </Text>
+        </Box>
+        <Box flexShrink={1} minWidth={0}>
+          <Text wrap="truncate-end">
+            <Text bold={isNow} color={isNow ? tone('work') : undefined} dimColor={r.kind === 'next' || r.kind === 'later' || r.kind === 'halted'}>{r.status}</Text>
+            {isNow && r.doing ? <Text dimColor>{` · ${clip(r.doing, inner >= 100 ? 40 : 16)}`}</Text> : null}
+          </Text>
+        </Box>
       </Box>
     )
   }
+
+  // The overall bar gives back the columns its status needs ("0% · list not updated"), and the
+  // label keeps its 14. Left to shrink, the label took the squeeze and wrapped a letter a row.
+  const status = card.pct.length + (card.notice !== undefined ? ` · ${card.notice}`.length : 0)
+  const total = Math.max(6, Math.min(L.bar, inner - L.label - status - 2))
 
   return (
     <Box key="plain-view" flexDirection="column" borderStyle="round" borderColor={border} paddingX={1}>
@@ -291,14 +302,17 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
       </Box>
       {requestRows()}
       <Box flexDirection="row" justifyContent="space-between">
-        <Box flexDirection="row">
+        <Box flexShrink={0} flexDirection="row">
           <Text dimColor>{clip(card.label, L.label).padEnd(L.label)}</Text>
-          {bar('total', L.bar, card.frac, pal === 'off' ? 'off' : pal)}
+          {bar('total', total, card.frac, pal === 'off' ? 'off' : pal)}
+          <Text>  </Text>
         </Box>
-        <Text>
-          <Text bold color={tone(card.state)}>{card.pct}</Text>
-          {card.notice !== undefined ? <Text color="warning">{` · ${card.notice}`}</Text> : null}
-        </Text>
+        <Box flexShrink={1} minWidth={0}>
+          <Text wrap="truncate-end">
+            <Text bold color={tone(card.state)}>{card.pct}</Text>
+            {card.notice !== undefined ? <Text color="warning">{` · ${card.notice}`}</Text> : null}
+          </Text>
+        </Box>
       </Box>
       {card.before !== undefined && <Text dimColor>{`  ${card.before}`}</Text>}
       {card.rows.map(row)}
