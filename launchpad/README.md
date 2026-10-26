@@ -61,7 +61,8 @@ session's model and effort in one click, this collection's mods, and the shortcu
     hidden keeps it on but out of sight. test-hud is left out: it is a tool for developers.
   - **Hover:** a boxed button fills with the accent under the pointer, its label inverted, as the
     menu tiles do. On the terminal that is the shortcuts and `Fechar`; the model and effort controls are
-    plain text there (underlined by the engine under the pointer) and boxes with the fill on Claude Code desktop. Toggles, the eye, tabs and the footer verbs have none. A desktop
+    plain text there and boxes with the fill on Claude Code desktop. A link (no brackets: the tabs, the
+    footer verbs, a mod's name, the controls on the terminal) only underlines under the pointer. Toggles, the eye, tabs and the footer verbs have none. A desktop
     may keep its native hover if it ignores the color.
   - **Shortcuts** tab: the menu's buttons in one line each, less `Trocar modelo`, which the controls replace.
   The labels of the `/pad` row follow the `language` option (`configurar · listar · …` or

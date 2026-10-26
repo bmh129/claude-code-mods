@@ -250,6 +250,12 @@ const LABEL_HOVER = { color: 'inverseText', bold: true } as const
 /** A5: an action that is not the card's decision, in a neutral box. Never `plain`: a plain Button ignores `variant`. */
 const SECONDARY = { variant: 'secondary' } as const
 /**
+ * What a link (a button with no brackets: text, tabs, the footer verbs) does under the pointer: an
+ * underline and nothing else. `inverse: false` asks the surface not to invert it as it does a plain button.
+ */
+const hoverLink = (key: string) => ({ scope: `hover:${key}`, underline: true, inverse: false }) as const
+
+/**
  * The fill a boxed button takes under the pointer, as the menu's tiles do: the accent behind the label,
  * the label in the inverse color. `scope` is the button's own key, so the hover needs no keyed Box.
  */
@@ -342,11 +348,11 @@ function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | '
         <Box key={`padrow:${a.verb}`} flexDirection="row">
           {i > 0 && <Text dimColor> · </Text>}
           {tone ? (
-            <Button key={`cmd:${a.verb}`} plain onPress={() => pressVerb($, a)}>
+            <Button key={`cmd:${a.verb}`} plain hover={hoverLink(`cmd:${a.verb}`)} onPress={() => pressVerb($, a)}>
               <Text color={tone}>{w.verbs[a.verb] ?? a.verb}</Text>
             </Button>
           ) : (
-            <Button key={`cmd:${a.verb}`} plain dimColor label={w.verbs[a.verb] ?? a.verb} onPress={() => pressVerb($, a)} />
+            <Button key={`cmd:${a.verb}`} plain dimColor hover={hoverLink(`cmd:${a.verb}`)} label={w.verbs[a.verb] ?? a.verb} onPress={() => pressVerb($, a)} />
           )}
         </Box>
       ))}
@@ -492,11 +498,11 @@ function flat(
   const color = opts.isWarned ? 'warning' : opts.color
   if (opts.text && e.surface === 'terminal') {
     return color ? (
-      <Button key={key} plain onPress={onPress}>
+      <Button key={key} plain hover={hoverLink(key)} onPress={onPress}>
         <Text color={color}>{label}</Text>
       </Button>
     ) : (
-      <Button key={key} plain label={label} onPress={onPress} />
+      <Button key={key} plain hover={hoverLink(key)} label={label} onPress={onPress} />
     )
   }
   if (color) {
@@ -927,7 +933,7 @@ export const register: Register = (on, options) => {
               {isOff ? (
                 <Text dimColor>{modLabel(m, icons)}</Text>
               ) : (
-                <Button key={`mod:${m.plugin}`} plain label={modLabel(m, icons)} onPress={() => runMod($, m)} />
+                <Button key={`mod:${m.plugin}`} plain hover={hoverLink(`mod:${m.plugin}`)} label={modLabel(m, icons)} onPress={() => runMod($, m)} />
               )}
             </Box>
             {!isOff && state !== 'unknown' && flat($, e, `eye:${m.plugin}`, state === 'hidden' ? '◌' : '◉', () => pressEye($, m, state === 'hidden'), { ...(state === 'hidden' ? { color: 'warning' } : {}) })}
@@ -957,12 +963,12 @@ export const register: Register = (on, options) => {
         )}
 
         <Box flexDirection="row" gap={1}>
-          {tabNow === 'mods' ? <Text bold color="claude">{sb.tabs.mods}</Text> : <Button key="tab:mods" plain dimColor label={sb.tabs.mods} onPress={() => update($, tab, () => 'mods')} />}
+          {tabNow === 'mods' ? <Text bold color="claude">{sb.tabs.mods}</Text> : <Button key="tab:mods" plain dimColor hover={hoverLink('tab:mods')} label={sb.tabs.mods} onPress={() => update($, tab, () => 'mods')} />}
           <Text dimColor>·</Text>
           {tabNow === 'shortcuts' ? (
             <Text bold color="claude">{sb.tabs.shortcuts}</Text>
           ) : (
-            <Button key="tab:shortcuts" plain dimColor label={sb.tabs.shortcuts} onPress={() => update($, tab, () => 'shortcuts')} />
+            <Button key="tab:shortcuts" plain dimColor hover={hoverLink('tab:shortcuts')} label={sb.tabs.shortcuts} onPress={() => update($, tab, () => 'shortcuts')} />
           )}
         </Box>
 

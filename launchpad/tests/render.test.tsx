@@ -1113,17 +1113,21 @@ const button = (tree: unknown, key: string) => nodes(tree, 'Button').find(b => b
 const hasHover = (tree: unknown, key: string) => button(tree, key)?.hover !== undefined
 const textColor = (tree: unknown, key: string) => (nodes(button(tree, key), 'Text')[0]?.props ?? {}).color
 
-test('hover: the filled hover is on boxed buttons only. Terminal: the shortcuts and close. Desktop: also the controls', async ($, on) => {
+test('hover: the fill is on boxed buttons only, links get an underline and nothing else, toggles and the eye none', async ($, on) => {
   sbWorld(on)
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await panel($, surface)
     let tree = await ui.drawn()
-    // never on a toggle, the eye (icon only), the footer verbs, the tabs, the quiet toggle
-    for (const k of ['toggle:limits-meter', 'toggle:agent-watch', 'toggle:quiet', 'eye:limits-meter', 'tab:shortcuts', 'cmd:configuration', 'cmd:help']) expect(hasHover(tree, k)).toBe(false)
+    // never on a toggle, the eye (icon only) or the quiet toggle
+    for (const k of ['toggle:limits-meter', 'toggle:agent-watch', 'toggle:quiet', 'eye:limits-meter']) expect(hasHover(tree, k)).toBe(false)
+    // a link (no brackets: tabs, footer verbs, the mod's name) only underlines, and asks not to be inverted
+    for (const k of ['tab:shortcuts', 'cmd:configuration', 'cmd:help', 'mod:limits-meter']) expect(button(tree, k)?.hover).toEqual({ scope: `hover:${k}`, underline: true, inverse: false })
     expect(hasHover(tree, 'close')).toBe(true)
-    // the controls: a box on the desktop, plain text on the terminal (the engine underlines it under the pointer)
-    for (const k of ['model:sonnet', 'effort:low']) expect(hasHover(tree, k)).toBe(surface === 'desktop')
+    // the controls: a box with the fill on the desktop, a link on the terminal
+    for (const k of ['model:sonnet', 'effort:low']) {
+      expect(button(tree, k)?.hover).toEqual(surface === 'desktop' ? { scope: `hover:${k}`, backgroundColor: 'claude', color: 'inverseText' } : { scope: `hover:${k}`, underline: true, inverse: false })
+    }
     // the fill: the accent behind the label, the inverse color on it, a scope of its own so no keyed Box is needed
     expect(button(tree, 'close')?.hover).toEqual({ scope: 'hover:close', backgroundColor: 'claude', color: 'inverseText' })
     await ui.press({ key: 'tab:shortcuts' })
