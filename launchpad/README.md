@@ -68,8 +68,9 @@ session's model and effort in one click, this collection's mods, and the shortcu
 /pad remove 3                         drop button 3
 /pad reset                            back to the default buttons
 /pad place header | prompt | pane     where the menu shows: under the header, right above the prompt, or in a pane
-/pad off                              turn the menu off: no card at the start, after /clear or on /pad
-/pad on                               turn it back on
+/pad hide                             hide the menu: no card at the start, after /clear or on /pad
+/pad show                             show it again
+/pad off | on                         turn the launchpad itself off or on in every conversation
 ```
 
 `/pad configuration` (or `/pad config`) opens a pane with your buttons, each with `↑`, `↓` and
@@ -83,8 +84,9 @@ button runs the command bare. A button saved with such blanks by an earlier vers
 (`/clear [name]`) is saved back bare once Claude Code lists the command. Once 8 buttons work, the
 pane says the menu is full until you remove one.
 
-`/pad off` is kept across sessions and hides the cards already in the conversation too. The
-other commands and the pane go on working, so you can set the menu up before `/pad on`. The
+`/pad hide` is kept across sessions and hides the cards already in the conversation too. The
+other commands and the pane go on working, so you can set the menu up before `/pad show`. (Before
+0.6.0 this was `/pad off`; a menu hidden that way stays hidden.) The
 `showOnStart` option below only stops the card at the start and after `/clear`.
 
 The icon in `/pad add` is optional. It can be any emoji or symbol, or a built-in name between
@@ -123,6 +125,7 @@ name (`launchpad@lfernandes-mods`).
 
 | Option | Values | Default |
 | --- | --- | --- |
+| `enabled` | `true` or `false`. Off keeps only the `/pad` command, which turns the mod back on; `/pad on` and `off` change it too | `true` |
 | `language` | `auto`, `pt-BR`, `en`: the default buttons and the messages. `auto` follows the system's `LANG`: Portuguese for `pt_*`, English otherwise and when `LANG` is unset | `auto` |
 | `icons` | `auto`, `emoji`, or `symbol` (`⇲ ▥ ◔`) for terminals that draw emoji at odd widths. `auto` uses symbols in a JetBrains IDE's terminal (IntelliJ, PyCharm, ...: `TERMINAL_EMULATOR=JetBrains-JediTerm`), which gives many emoji one column, and emoji elsewhere | `auto` |
 | `showOnStart` | `false` shows the menu only on `/pad` | `true` |

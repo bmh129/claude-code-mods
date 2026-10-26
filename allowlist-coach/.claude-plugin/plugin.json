@@ -1,9 +1,15 @@
 {
   "name": "allowlist-coach",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Counts permission dialogs per rule and, after repeated approvals, offers to add the rule to permissions.allow, asking before it writes",
   "types": "./types/index.d.ts",
   "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "On",
+      "description": "Count permission dialogs per rule: the toast that offers a rule, the note in the dialog and the pane. Off keeps only the /allowlist command, which turns it back on. /allowlist on and off change it too; /allowlist hide keeps counting but silent",
+      "default": true
+    },
     "language": {
       "type": "string",
       "title": "Language",

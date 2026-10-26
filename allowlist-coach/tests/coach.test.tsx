@@ -402,3 +402,58 @@ test('Portuguese from LANG: the dialog line, the questions and the pane', async 
   expect(JSON.parse(world.files[FILE]!).permissions.allow).toEqual([RULE])
   await pane.unmount()
 })
+
+// /allowlist on, off, hide and show
+
+test('hide: it keeps counting, with no toast and no note in the dialog; show brings them back', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  expect((await run($, 'hide')).text).toBe('allowlist hidden but on · /allowlist show brings it back')
+
+  for (let i = 0; i < 6; i++) await $.tool.call({ tool: 'Bash', command: `./mvnw test -Dtest=T${i}` } as never)
+  expect(world.notices).toHaveLength(0)
+  expect(world.toasts).toHaveLength(0)
+  expect((await run($, '')).text).toContain(RULE)
+
+  expect((await run($, 'show')).text).toBe('allowlist shown · /allowlist hide hides it')
+  await $.tool.call({ tool: 'Bash', command: './mvnw test -Dtest=T7' } as never)
+  expect(world.notices.length).toBeGreaterThan(0)
+})
+
+test('hide is kept for the next session', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  await start($)
+  await run($, 'hide')
+  await start($)
+  for (let i = 0; i < 6; i++) await $.tool.call({ tool: 'Bash', command: `./mvnw test -Dtest=T${i}` } as never)
+  expect(world.notices).toHaveLength(0)
+  expect(world.toasts).toHaveLength(0)
+})
+
+test('on and off write the enabled option; a refused one says why', async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  const sets: { key: string; value: unknown }[] = []
+  let deny = ''
+  on('config.set', ($, e) => (deny ? ({ deny } as never) : (sets.push({ key: e.key, value: e.value }), { value: e.value } as never)))
+  await start($)
+  expect((await run($, 'on')).text).toBe('allowlist is already on.')
+  expect((await run($, 'off')).text).toBe('allowlist off in every conversation · /allowlist on turns it on')
+  expect(sets).toEqual([{ key: 'allowlist-coach.enabled', value: false }])
+  deny = 'managed by policy'
+  expect((await run($, 'off')).text).toBe('Could not change the option: managed by policy')
+})
+
+test('off: dialogs are not counted, but the command still answers', { options: { enabled: false } }, async ($, on) => {
+  const world = fresh()
+  engine($, on, world, () => true)
+  on('config.set', ($, e) => ({ value: e.value }) as never)
+  await start($)
+  for (let i = 0; i < 6; i++) await $.tool.call({ tool: 'Bash', command: `./mvnw test -Dtest=T${i}` } as never)
+  expect(world.notices).toHaveLength(0)
+  expect(world.toasts).toHaveLength(0)
+  expect((await run($, 'off')).text).toBe('allowlist is already off.')
+  expect((await run($, 'on')).text).toBe('allowlist on · /allowlist off turns it off')
+})
