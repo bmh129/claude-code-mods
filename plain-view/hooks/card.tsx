@@ -289,6 +289,11 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
     )
   }
 
+  // The overall bar gives back the columns its status needs ("0% · list not updated"), and the
+  // label keeps its 14. Left to shrink, the label took the squeeze and wrapped a letter a row.
+  const status = card.pct.length + (card.notice !== undefined ? ` · ${card.notice}`.length : 0)
+  const total = Math.max(6, Math.min(L.bar, inner - L.label - status - 2))
+
   return (
     <Box key="plain-view" flexDirection="column" borderStyle="round" borderColor={border} paddingX={1}>
       <Box flexDirection="row" justifyContent="space-between">
@@ -297,14 +302,17 @@ export function drawCard(ui: Ui, card: Card, o: DrawOptions) {
       </Box>
       {requestRows()}
       <Box flexDirection="row" justifyContent="space-between">
-        <Box flexDirection="row">
+        <Box flexShrink={0} flexDirection="row">
           <Text dimColor>{clip(card.label, L.label).padEnd(L.label)}</Text>
-          {bar('total', L.bar, card.frac, pal === 'off' ? 'off' : pal)}
+          {bar('total', total, card.frac, pal === 'off' ? 'off' : pal)}
+          <Text>  </Text>
         </Box>
-        <Text>
-          <Text bold color={tone(card.state)}>{card.pct}</Text>
-          {card.notice !== undefined ? <Text color="warning">{` · ${card.notice}`}</Text> : null}
-        </Text>
+        <Box flexShrink={1} minWidth={0}>
+          <Text wrap="truncate-end">
+            <Text bold color={tone(card.state)}>{card.pct}</Text>
+            {card.notice !== undefined ? <Text color="warning">{` · ${card.notice}`}</Text> : null}
+          </Text>
+        </Box>
       </Box>
       {card.before !== undefined && <Text dimColor>{`  ${card.before}`}</Text>}
       {card.rows.map(row)}

@@ -1431,3 +1431,14 @@ test('110 columns: a long status truncates, the step subject keeps its row', ON,
   expect(drawn).toContain('"flexShrink":0')
   expect(drawn).toContain('"wrap":"truncate-end"')
 })
+
+test('110 columns: the overall bar leaves room for "· list not updated", so the label keeps its row', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await prose($, w, 30)
+  const drawn = await card($, 'terminal', 110)
+  expect(drawn).toContain(' · lista parada')
+  // 106 inner columns: a full bar would be 86 and push the status past the edge.
+  expect(drawn).not.toContain('"columns":86')
+  expect(drawn.match(/"flexShrink":0/g)!.length).toBeGreaterThan(1)
+})
