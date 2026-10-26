@@ -103,7 +103,7 @@ test('the verbs: clear waits in the prompt, help answers in the transcript, clos
   expect(JSON.stringify(await pane.drawn())).toContain('41/43 passing')
   await pane.press({ key: 'verb:help' })
   expect(w.logs[0]).toBe('/test-hud          open the pane')
-  expect(w.logs).toHaveLength(3)
+  expect(w.logs).toHaveLength(6)
   await pane.press({ key: 'close' })
   expect(w.closed).toEqual(['test-hud'])
   await pane.unmount()
@@ -275,4 +275,57 @@ test('a saved copy named in the output is read only from tool-results under the 
   await vitest($, 'tu2')
   expect(read).toEqual(['/home/u/.claude/projects/p/s/tool-results/b1.txt'])
   expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+})
+
+// /test-hud on, off, hide and show
+
+test('hide: the status line and the green toast go quiet, the run is still counted; show brings them back', async ($, on) => {
+  const { w } = world(on)
+  await start($)
+  await vitest($, 'tu1')
+  expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+  expect((await $.command.run({ ...RUN, args: 'hide' } as never)).text).toBe('test-hud hidden but on · /test-hud show brings it back')
+  expect(w.statuses.at(-1)).toBeUndefined()
+  w.output = GREEN
+  await vitest($, 'tu2')
+  expect(w.statuses.at(-1)).toBeUndefined()
+  expect(w.toasts).toEqual([])
+  expect((await $.command.run({ ...RUN, args: 'show' } as never)).text).toBe('test-hud shown · /test-hud hide hides it')
+  expect(w.statuses.at(-1)).toBe('✓ tests 43/43 █▁')
+})
+
+test('hide is kept for the next session', async ($, on) => {
+  const { w } = world(on)
+  await start($)
+  await $.command.run({ ...RUN, args: 'hide' } as never)
+  await start($)
+  await vitest($, 'tu1')
+  expect(w.statuses.filter(s => s !== undefined)).toEqual([])
+})
+
+test('on and off write the enabled option', async ($, on) => {
+  world(on)
+  const sets: { key: string; value: unknown }[] = []
+  on('config.set', (_$: any, e: any) => (sets.push({ key: e.key, value: e.value }), { value: e.value }) as never)
+  await start($)
+  expect((await $.command.run({ ...RUN, args: 'on' } as never)).text).toBe('test-hud is already on.')
+  expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('test-hud off in every conversation · /test-hud on turns it on')
+  expect(sets).toEqual([{ key: 'test-hud.enabled', value: false }])
+})
+
+test('off: runs are not counted and the status line stays empty, but the command still answers', { options: { enabled: false } }, async ($, on) => {
+  const { w } = world(on)
+  on('config.set', (_$: any, e: any) => ({ value: e.value }) as never)
+  await start($)
+  await vitest($, 'tu1')
+  expect(w.statuses).toEqual([])
+  expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('test-hud is already off.')
+  expect((await $.command.run({ ...RUN, args: 'on' } as never)).text).toBe('test-hud on · /test-hud off turns it off')
+})
+
+test('a refused option says why', async ($, on) => {
+  world(on)
+  on('config.set', () => ({ deny: 'managed by policy' }) as never)
+  await start($)
+  expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('Could not change the option: managed by policy')
 })

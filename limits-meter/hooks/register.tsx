@@ -34,6 +34,7 @@ import type { Setting } from './meter'
 import { addSamples, alerts, bar, barCells, clockOf, contextSpark, effortLevel, gauge, groupContext, heaviest, inferTtl, keepMargin, KEEP_WARM_MAX_MS, KEEP_WARM_TEXT, label, mini, mmss, needsCompact, pace, pct, resetIn, splitOf, summary, switchWarning, toSnapshot, toTurn, tone as toneOf, TTL_MS, TURNS_KEPT } from './meter'
 import type { IconStyle, Lang, Verb } from './ui'
 import { clip, fillArgs, glyph, langOf, linesOf, shortModel, styleOf, tokens, verbRow } from './ui'
+import { switchOf, switchWords } from './switch'
 import { COMMAND, WORDS } from './words'
 
 const PANE = 'limits'
@@ -59,6 +60,8 @@ const groups = atom({ plugin: 'limits-meter', key: 'groups' } as const, null as 
 
 // Set by register from the options, and by session.start from the system's LANG.
 let lang: Lang = 'en'
+/** The `enabled` option; off, only the command answers. */
+let isOn = true
 let warnAt = 70
 let dangerAt = 90
 /** The band's cells by id (5h, wk, spend, ctx, cache); null shows them all. */
@@ -111,6 +114,20 @@ const take = async ($: EngineInterface, next: Snapshot) => {
 const setHidden = async ($: EngineInterface, hidden: boolean) => {
   await update($, isHidden, () => hidden)
   await $.store.set(KEY_HIDDEN, hidden)
+}
+
+/** Changes the mod's `enabled` option as /config would; the engine reloads the mod with it. */
+const setEnabled = async ($: EngineInterface, value: boolean): Promise<string | null> => {
+  const result = await $.config.set({ key: 'limits-meter.enabled', value } as never)
+  return result && 'deny' in result && result.deny !== undefined ? String(result.deny) : null
+}
+
+/** /limits on|off: the option, in every conversation. hide and show are the band's own, below. */
+const runEnabled = async ($: EngineInterface, want: boolean): Promise<{ text?: string }> => {
+  const s = switchWords(lang, COMMAND)
+  if (want === isOn) return { text: want ? s.alreadyOn : s.alreadyOff }
+  const deny = await setEnabled($, want)
+  return { text: deny ? s.denied(deny) : want ? s.on : s.off }
 }
 
 /** Sets the costly-switch threshold, and keeps it for later sessions. */
@@ -290,6 +307,8 @@ const open = ($: EngineInterface) => $.ui.open({ id: PANE, title: WORDS[lang].pa
 /** /limits and its arguments: what the command answers, and what the pane's verbs run. */
 const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: string }> => {
   const w = WORDS[lang]
+  const choice = switchOf(args)
+  if (choice === 'on' || choice === 'off') return runEnabled($, choice === 'on')
   const [verb = '', arg = ''] = args.trim().toLowerCase().split(/\s+/)
   if (verb === 'warn') {
     if (arg === '') return { text: w.warnIs(await read($, switchAt)) }
@@ -354,6 +373,7 @@ export const register: Register = (on, options) => {
   density = options.density === 'bars' || options.density === 'mini' || options.density === 'numbers' ? options.density : 'auto'
   format = options.format === 'compact' ? 'compact' : 'full'
   style = styleOf(options.icons)
+  isOn = options.enabled !== false
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -364,9 +384,10 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: COMMAND,
       description: WORDS[lang].description,
-      argumentHint: '[hide|show|keep-warm on|off|warn N|help]',
+      argumentHint: '[on|off|hide|show|keep-warm on|off|warn N|help]',
       immediate: true,
     })
+    if (!isOn) return result
     const hidden = (await $.store.get(KEY_HIDDEN).catch(() => undefined)) === true
     await update($, isHidden, () => hidden)
     const kept = await $.store.get(KEY_SWITCH).catch(() => undefined)
@@ -391,6 +412,11 @@ export const register: Register = (on, options) => {
     await takeGroups($)
     return result
   })
+
+  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
+
+  // Off: only the command above answers, so `/limits on` can bring the rest back.
+  if (!isOn) return
 
   on('session.measure', async ($, e, next) => {
     const result = await next(e)
@@ -470,8 +496,6 @@ export const register: Register = (on, options) => {
     const { Text } = $.ui.resolve(e)
     return <Text dimColor>{WORDS[lang].keepRow}</Text>
   })
-
-  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || (await read($, isHidden))) return next(e)

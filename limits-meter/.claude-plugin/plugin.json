@@ -1,9 +1,15 @@
 {
   "name": "limits-meter",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Plan limits, cache clock and context above the prompt: model and effort, 5-hour and weekly windows with reset times, a countdown of the prompt cache with an opt-in keep-warm that spends plan, context split by group (system, MCP, messages), tokens per turn, and a toast on a costly model switch near the limit",
   "types": "./types/index.d.ts",
   "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "On",
+      "description": "Show the plan limits, the cache clock and the context band, and raise the toasts. Off keeps only the /limits command, which turns it back on. /limits on and off change it too; /limits hide keeps it on but takes the band away",
+      "default": true
+    },
     "language": {
       "type": "string",
       "title": "Language",

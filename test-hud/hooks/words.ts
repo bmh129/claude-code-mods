@@ -53,7 +53,7 @@ type Words = {
 
 export const WORDS: Record<Lang, Words> = {
   'pt-BR': {
-    description: 'Testes: /test-hud abre o painel; clear, demo, help',
+    description: 'Testes: /test-hud abre o painel; on, off, hide, show, clear, demo, help',
     pane: 'Testes',
     hint: 'Execuções de teste no Bash desta sessão. Clique numa falha para pedir a correção.',
     passing: (p, t) => `${p}/${t} passando`,
@@ -92,11 +92,14 @@ export const WORDS: Record<Lang, Words> = {
       '/test-hud          abre o painel',
       '/test-hud clear    apaga as execuções',
       '/test-hud demo     mostra execuções de exemplo',
+      '/test-hud hide     segue ligado, sem linha de status nem toast; o painel abre',
+      '/test-hud show     traz de volta a linha e os avisos',
+      '/test-hud off | on desliga em todas as conversas | liga',
     ].join('\n'),
     failedToRun: what => `Não deu para rodar: ${what}`,
   },
   en: {
-    description: 'Test runs: /test-hud opens the pane; clear, demo, help',
+    description: 'Test runs: /test-hud opens the pane; on, off, hide, show, clear, demo, help',
     pane: 'Tests',
     hint: 'Test runs in Bash this session. Press a failing test to ask for a fix.',
     passing: (p, t) => `${p}/${t} passing`,
@@ -135,6 +138,9 @@ export const WORDS: Record<Lang, Words> = {
       '/test-hud          open the pane',
       '/test-hud clear    drop the runs',
       '/test-hud demo     show sample runs',
+      '/test-hud hide     stays on, with no status line or toast; the pane still opens',
+      '/test-hud show     bring the line and the notices back',
+      '/test-hud off | on turn it off in every conversation | on',
     ].join('\n'),
     failedToRun: what => `Could not run: ${what}`,
   },

@@ -30,7 +30,9 @@ It writes nothing until you pick a file to add the rule to in a dialog.
   rule written out. `/allowlist allow` refuses a risky or refused rule, and one under ask or
   deny, whatever number it is given. `/allowlist reset 1` sets one rule's count back to zero; `/allowlist reset`
   clears this project's counts. Both ask first, with **Cancel** first, so a stray Enter keeps
-  them. `/allowlist help` lists them.
+  them. `/allowlist hide` keeps counting but stops the toast and the note in the dialog, until
+  `/allowlist show`. `/allowlist off` and `on` turn the coach off or on in every conversation (the
+  `enabled` option). `/allowlist help` lists them.
 - **The pane's footer** has the same verbs as buttons. `allow`, `dismiss`, `remove` and `reset`
   put the command in the prompt for you to finish and send; `help` answers at once.
 
@@ -40,6 +42,7 @@ In `/config`:
 
 | Option | Default | What it does |
 | --- | --- | --- |
+| `enabled` | on | Off keeps only the mod's command, which turns it back on. `/allowlist on` and `off` change it too |
 | `language` | `auto` | `pt-BR` or `en` for the pane, the line under the dialog, the questions and the toasts. `auto` follows `LANG`: Portuguese for `pt_*`, English otherwise |
 | `threshold` | 5 | Approvals, with no refusal, before a rule is offered: 2 to 20 |
 

@@ -176,7 +176,7 @@ test('the pane footer: hide and show run, help writes to the transcript, Close c
   const p = await pane($)
   await p.press({ key: 'verb:help' })
   expect(world.logs[0]).toContain('/limits          open the pane')
-  expect(world.logs).toHaveLength(5)
+  expect(world.logs).toHaveLength(6)
   await p.press({ key: 'verb:hide' })
   expect(world.logs.at(-1)).toBe('Band hidden. /limits show brings it back.')
   const b = await band($)
@@ -951,4 +951,29 @@ test('context groups: the pane lists every category, each MCP server and the fre
   expect(shown).toContain('free')
   expect(shown).toContain('≈ local engine estimate, the same figures as /context')
   await p.unmount()
+})
+
+// /limits on and off
+
+test('on and off write the enabled option; a refused one says why', async ($, on) => {
+  engine(on)
+  const sets: { key: string; value: unknown }[] = []
+  let deny = ''
+  on('config.set', (_$: any, e: any) => (deny ? ({ deny } as never) : (sets.push({ key: e.key, value: e.value }), { value: e.value } as never)))
+  await start($)
+  expect((await run($, 'on')).text).toBe('limits is already on.')
+  expect((await run($, 'off')).text).toBe('limits off in every conversation · /limits on turns it on')
+  expect(sets).toEqual([{ key: 'limits-meter.enabled', value: false }])
+  deny = 'managed by policy'
+  expect((await run($, 'off')).text).toBe('Could not change the option: managed by policy')
+})
+
+test('off: no band and no toast, but the command still answers', { options: { enabled: false } }, async ($, on) => {
+  const world = engine(on)
+  on('config.set', (_$: any, e: any) => ({ value: e.value }) as never)
+  await start($)
+  await $.session.measure({ ...FULL, rateLimits: [{ kind: 'five_hour', percentUsed: 92, resetsAt: '2026-10-08T13:12:00Z' }, LIMITS[1]] } as never)
+  expect(world.toasts).toEqual([])
+  expect((await run($, 'off')).text).toBe('limits is already off.')
+  expect((await run($, 'on')).text).toBe('limits on · /limits off turns it off')
 })

@@ -1366,3 +1366,39 @@ test('askForTasks with no task tool: the line frees the checklist from terse-out
   expect(text).toContain('`- [x] <that step>` (one line is enough)')
   expect(text).toContain('exempt from any brevity or terse-output rule')
 })
+
+// /plain-view hide and show
+
+test('hide: the plan card goes away while rows still fold; show brings it back', ON, async ($, on) => {
+  engine(on)
+  mock.store(on)
+  await start($)
+  await ask($)
+  await plan($)
+  expect(await card($)).toContain('Montar o painel do tempo')
+  expect((await run($, 'hide')).text).toBe('plain-view oculto, mas ligado · /plain-view show mostra')
+  expect(await card($)).not.toContain('Montar o painel do tempo')
+  expect(await row($, 'ToolUse', toolUse('Read'))).not.toContain('Read')
+  expect((await run($, 'show')).text).toBe('plain-view visível · /plain-view hide oculta')
+  expect(await card($)).toContain('Montar o painel do tempo')
+})
+
+test('hide is kept for the next session', ON, async ($, on) => {
+  engine(on)
+  mock.store(on)
+  await start($)
+  await run($, 'hide')
+  await start($)
+  await ask($)
+  await plan($)
+  expect(await card($)).not.toContain('Montar o painel do tempo')
+})
+
+test('hide leaves the demo card alone, so the person can see what it looks like', ON, async ($, on) => {
+  engine(on)
+  mock.store(on)
+  await start($)
+  await run($, 'hide')
+  await run($, 'demo')
+  expect(await card($)).toContain('Demo:')
+})

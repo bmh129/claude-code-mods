@@ -1,13 +1,13 @@
 {
   "name": "plain-view",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "description": "A quiet transcript: tool rows step aside and the agent's plan shows as a card above the prompt, with the current step, progress bars and a summary when the turn ends",
   "types": "./types/index.d.ts",
   "userConfig": {
     "enabled": {
       "type": "boolean",
       "title": "On",
-      "description": "Hide successful tool rows and show the plan card above the prompt. Failures, permission dialogs and the agent's questions always show in full. /plain-view on and off change it too",
+      "description": "Hide successful tool rows and show the plan card above the prompt. Failures, permission dialogs and the agent's questions always show in full. /plain-view on and off change it too. /plain-view hide keeps it on but takes the card away; show brings it back",
       "default": false
     },
     "agentText": {

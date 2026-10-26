@@ -51,6 +51,8 @@ import {
 } from './tally'
 import type { Lang, Verb } from './ui'
 import { clip, fillArgs, langOf, linesOf, verbRow, windowOf } from './ui'
+import { switchOf, switchWords } from './switch'
+import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
 
 const PANE = 'allowlist'
@@ -66,6 +68,11 @@ const filter = atom({ plugin: 'allowlist-coach', key: 'filter' } as const, '')
 type Open = { tool: string; input: string; agentId?: string; rules: string[] | null; ran: boolean; example: string }
 const open = new Map<string, Open>()
 let root = ''
+/** The `enabled` option; off, only the command answers. */
+let isOn = true
+/** On but silent: it counts, but offers no toast and writes no note in the dialog. Kept in the store. */
+let isHidden = false
+const KEY_HIDDEN = 'hidden'
 // The last first row the list can start at, from the last render: the wheel stops there.
 let lastStart = 0
 // Set by register from the options, and by session.start from the system's LANG.
@@ -209,9 +216,31 @@ const reset = async ($: EngineInterface) => {
   return w.cleared
 }
 
+/** Changes the mod's `enabled` option as /config would; the engine reloads the mod with it. */
+const setEnabled = async ($: EngineInterface, value: boolean): Promise<string | null> => {
+  const result = await $.config.set({ key: 'allowlist-coach.enabled', value } as never)
+  return result && 'deny' in result && result.deny !== undefined ? String(result.deny) : null
+}
+
+/** /allowlist on|off|hide|show: off is the option, in every conversation; hide is a stored flag. */
+const runSwitch = async ($: EngineInterface, choice: Switch): Promise<{ text?: string }> => {
+  const s = switchWords(lang, COMMAND)
+  if (choice === 'on' || choice === 'off') {
+    const want = choice === 'on'
+    if (want === isOn) return { text: want ? s.alreadyOn : s.alreadyOff }
+    const deny = await setEnabled($, want)
+    return { text: deny ? s.denied(deny) : want ? s.on : s.off }
+  }
+  isHidden = choice === 'hide'
+  await $.store.set(KEY_HIDDEN, isHidden)
+  return { text: isHidden ? s.hidden : s.shown }
+}
+
 /** /allowlist and its arguments: what the command answers, and what the pane's verbs run. */
 const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: string }> => {
   const w = WORDS[lang]
+  const choice = switchOf(args)
+  if (choice) return runSwitch($, choice)
   const [verb = '', ...rest] = args.trim().split(/\s+/)
   const arg = rest.join(' ')
   const key = async () => keyAt(await read($, entries), await read($, configured), arg)
@@ -270,6 +299,7 @@ const pressVerb = async ($: EngineInterface, v: Verb) => {
 export const register: Register = (on, options) => {
   lang = langOf(options.language)
   setThreshold(options.threshold)
+  isOn = options.enabled !== false
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -277,15 +307,22 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: COMMAND,
       description: WORDS[lang].description,
-      argumentHint: '[allow <n>|dismiss <n>|remove <n>|reset [<n>]|help]',
+      argumentHint: '[on|off|hide|show|allow <n>|dismiss <n>|remove <n>|reset [<n>]|help]',
       immediate: true,
     })
+    isHidden = (await $.store.get(KEY_HIDDEN).catch(() => undefined)) === true
+    if (!isOn) return result
     root = await $.session.root()
     const stored = (await $.store.get(storeKey())) as Record<string, Entry> | undefined
     await update($, entries, () => stored ?? {})
     await refresh($)
     return result
   })
+
+  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
+
+  // Off: only the command above answers, so `/allowlist on` can bring the rest back.
+  if (!isOn) return
 
   on('tool.call', async ($, e, next) => {
     const id = e.tool_use_id
@@ -311,7 +348,7 @@ export const register: Register = (on, options) => {
     const entry = (await read($, entries))[key]!
     if (before !== 'ready' && entry.state === 'counting' && status(entry, await read($, configured)) === 'ready') {
       await save($, list => setState(list, key, 'offered'))
-      $.ui.toast(WORDS[lang].offered(key, entry.approved), { timeoutMs: 10000 })
+      if (!isHidden) $.ui.toast(WORDS[lang].offered(key, entry.approved), { timeoutMs: 10000 })
     }
     return result
   }).catch(($, e, next) => next(e))
@@ -328,7 +365,7 @@ export const register: Register = (on, options) => {
       if (holdsSecret(call.input) || rules.some(holdsSecret)) break
       call.rules = rules
       const text = noticeFor((await read($, entries))[keyOf(call.rules)], await read($, configured), lang)
-      if (text) {
+      if (text && !isHidden) {
         try {
           $.ui.notice(id, text)
         } catch {
@@ -351,8 +388,6 @@ export const register: Register = (on, options) => {
     if (call) call.ran = true
     return next(e)
   }).catch(($, e, next) => next(e))
-
-  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
 
   // The wheel over the pane moves the list.
   on('ui.scroll', { component: 'Pane', requestId: PANE }, async ($, e) => {

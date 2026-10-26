@@ -211,21 +211,21 @@ test('symbol icons and English', { options: { icons: 'symbol', language: 'en' } 
   await ui.unmount()
 })
 
-test('/pad off hides every card until /pad on, across sessions', async ($, on) => {
+test('/pad hide hides every card until /pad show, across sessions', async ($, on) => {
   world(on)
   await start($)
   const ui = await row($)
   expect(JSON.stringify(await ui.drawn())).toContain('pad:compact')
 
-  expect((await pad($, 'off')).text).toContain('Launchpad desligado')
+  expect((await pad($, 'hide')).text).toContain('Launchpad oculto')
   expect(JSON.stringify(await ui.drawn())).not.toContain('pad:compact') // the card already drawn goes too
-  expect((await pad($, '')).text).toBe('O launchpad está desligado. /pad on liga de novo.')
+  expect((await pad($, '')).text).toBe('O launchpad está oculto. /pad show mostra de novo.')
   expect((await pad($, 'list')).text).toContain('/compact') // the list still works
 
   await start($) // a new session reads the store
-  expect((await pad($, '')).text).toBe('O launchpad está desligado. /pad on liga de novo.')
+  expect((await pad($, '')).text).toBe('O launchpad está oculto. /pad show mostra de novo.')
 
-  expect((await pad($, 'on')).text).toContain('Launchpad ligado')
+  expect((await pad($, 'show')).text).toContain('Menu de atalhos')
   expect(JSON.stringify(await ui.drawn())).toContain('pad:compact')
   await ui.unmount()
 })
@@ -319,7 +319,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await start($)
     const ui = await row($, surface)
     const drawn = JSON.stringify(await ui.drawn())
-    for (const verb of ['configuration', 'list', 'add', 'remove', 'reset', 'off', 'help']) expect(drawn).toContain(`"key":"cmd:${verb}"`)
+    for (const verb of ['configuration', 'list', 'add', 'remove', 'reset', 'hide', 'help']) expect(drawn).toContain(`"key":"cmd:${verb}"`)
 
     await ui.press({ key: 'cmd:configuration' })
     expect(w.opened).toEqual(['launchpad'])
@@ -337,9 +337,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(w.opened).toEqual(['launchpad', 'launchpad'])
     expect(w.fills).toEqual([])
 
-    await ui.press({ key: 'cmd:off' })
-    expect(JSON.stringify(await ui.drawn())).not.toContain('cmd:off') // off: the card goes
-    expect((await pad($, '')).text).toBe('O launchpad está desligado. /pad on liga de novo.')
+    await ui.press({ key: 'cmd:hide' })
+    expect(JSON.stringify(await ui.drawn())).not.toContain('cmd:hide') // hide: the card goes
+    expect((await pad($, '')).text).toBe('O launchpad está oculto. /pad show mostra de novo.')
     await ui.unmount()
   })
 }
@@ -472,7 +472,7 @@ test('/pad place prompt: the menu in a row right above the prompt, kept across s
   expect(w.commands).toEqual(['compact'])
   await ui.press({ key: 'band:settings' })
   expect(w.opened).toEqual(['launchpad'])
-  await pad($, 'off')
+  await pad($, 'hide')
   expect(JSON.stringify(await ui.drawn())).not.toContain('pad:compact')
   await ui.unmount()
 })
@@ -486,7 +486,7 @@ test('the row above the prompt goes after the other mods\' bands, against the bo
   expect(drawn).toContain('"key":"pad:compact"')
   expect(drawn).toContain('other mod band')
   expect(drawn.indexOf('other mod band')).toBeLessThan(drawn.indexOf('"key":"pad:compact"'))
-  await pad($, 'off')
+  await pad($, 'hide')
   const off = JSON.stringify(await ui.drawn())
   expect(off).not.toContain('pad:compact')
   expect(off).toContain('other mod band')
@@ -530,7 +530,7 @@ for (const place of ['header', 'prompt', 'pane'] as const) {
 test('start: ◆ pad stays while the menu is off, and the panel\'s /pad row offers on', async ($, on) => {
   world(on, files, undefined, COMMANDS, 'auto mode on')
   await start($)
-  await pad($, 'off')
+  await pad($, 'hide')
   const ui = await hint($)
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('auto mode on')
@@ -538,11 +538,11 @@ test('start: ◆ pad stays while the menu is off, and the panel\'s /pad row offe
   await ui.unmount()
   const p = await panel($)
   let rows = JSON.stringify(await p.drawn())
-  expect(rows).toContain('"key":"cmd:on"')
-  expect(rows).not.toContain('"key":"cmd:off"')
-  await p.press({ key: 'cmd:on' })
+  expect(rows).toContain('"key":"cmd:show"')
+  expect(rows).not.toContain('"key":"cmd:hide"')
+  await p.press({ key: 'cmd:show' })
   rows = JSON.stringify(await p.drawn())
-  expect(rows).toContain('"key":"cmd:off"')
+  expect(rows).toContain('"key":"cmd:hide"')
   expect((await pad($, '')).text).toBe('Menu de atalhos do launchpad.')
   await p.unmount()
 })
@@ -823,3 +823,38 @@ test('reset from the /pad row asks first; only "Voltar aos padrões" resets', as
   await ui.unmount()
 })
 
+
+// /pad on and off: the launchpad itself
+
+test('/pad on and off write the enabled option; a refused one says why', async ($, on) => {
+  world(on)
+  const sets: { key: string; value: unknown }[] = []
+  let deny = ''
+  on('config.set', (_$: any, e: any) => (deny ? ({ deny } as never) : (sets.push({ key: e.key, value: e.value }), { value: e.value } as never)))
+  await start($)
+  expect((await pad($, 'on')).text).toBe('pad já está ligado.')
+  expect((await pad($, 'off')).text).toBe('pad desligado em todas as conversas · /pad on liga')
+  expect(sets).toEqual([{ key: 'launchpad.enabled', value: false }])
+  deny = 'managed by policy'
+  expect((await pad($, 'off')).text).toBe('Não deu para mudar a opção: managed by policy')
+})
+
+test('off: no menu at the start, but /pad still answers and on writes the option back', { options: { enabled: false } }, async ($, on) => {
+  const w = world(on)
+  const sets: { key: string; value: unknown }[] = []
+  on('config.set', (_$: any, e: any) => (sets.push({ key: e.key, value: e.value }), { value: e.value }) as never)
+  await start($)
+  expect(w.logs ?? []).toEqual([])
+  expect((await pad($, 'off')).text).toBe('pad já está desligado.')
+  expect((await pad($, 'on')).text).toBe('pad ligado · /pad off desliga')
+  expect(sets).toEqual([{ key: 'launchpad.enabled', value: true }])
+})
+
+test('show brings back a menu that hide took away', async ($, on) => {
+  world(on)
+  await start($)
+  await pad($, 'hide')
+  expect((await pad($, '')).text).toBe('O launchpad está oculto. /pad show mostra de novo.')
+  expect((await pad($, 'show')).text).toBe('Menu de atalhos do launchpad.')
+  expect((await pad($, '')).text).toBe('Menu de atalhos do launchpad.')
+})

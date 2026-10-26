@@ -1,9 +1,15 @@
 {
   "name": "agent-watch",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Subagents at a glance: tokens per agent, a toast when one stalls, and a summary naming the heaviest agent when they finish",
   "types": "./types/index.d.ts",
   "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "On",
+      "description": "Track subagents: tokens per agent, stall and summary toasts, the status line and the pane. Off keeps only the /watch command, which turns it back on. /watch on and off change it too; /watch hide keeps it on but silent",
+      "default": true
+    },
     "stallMinutes": {
       "type": "number",
       "title": "Stall after (minutes)",

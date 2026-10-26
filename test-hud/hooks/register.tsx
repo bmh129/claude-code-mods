@@ -27,11 +27,14 @@ import type { Parsed, Run } from '../types'
 import { commandLine, durationSpark, fixed, flaky, fresh, greenText, parseRun, quietPass, record, redText, runnerOf, runnersOf, score, spark, statusText, trail, wholeCommand } from './hud'
 import type { Lang, Verb } from './ui'
 import { clip, elapsed, fillArgs, langOf, linesOf, verbRow } from './ui'
+import { switchOf, switchWords } from './switch'
+import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
 
 const PANE = 'test-hud'
 const PANE_SPARK = 24
 const PANE_RUNS = 10
+const KEY_HIDDEN = 'hidden'
 
 const runs = atom({ plugin: 'test-hud', key: 'runs' } as const, [] as Run[])
 const selected = atom({ plugin: 'test-hud', key: 'selected' } as const, null as number | null)
@@ -42,6 +45,10 @@ let shownStatus: string | undefined
 let lang: Lang = 'en'
 let regressionToast = false
 let keepHistory = false
+/** The `enabled` option; off, only the command answers. */
+let isOn = true
+/** On but silent: no status line and no toast. The pane still opens. Kept in the store. */
+let isHidden = false
 let root = ''
 
 const storeKey = () => `runs:${root}`
@@ -55,7 +62,7 @@ const isRun = (x: unknown): x is Run =>
   typeof x === 'object' && x !== null && typeof (x as Run).n === 'number' && typeof (x as Run).runner === 'string' && Array.isArray((x as Run).failures)
 
 const show = ($: EngineInterface, list: readonly Run[]) => {
-  const text = statusText(list, lang)
+  const text = isHidden ? undefined : statusText(list, lang)
   if (text === shownStatus) return
   shownStatus = text
   $.ui.status(text)
@@ -106,9 +113,9 @@ const add = async ($: EngineInterface, parsed: Parsed, meta: Omit<Run, keyof Par
   if (!run) return
   if (!run.isDemo) await save($, list)
   const green = greenText(list, run, lang)
-  if (green) $.ui.toast(`${green} /${COMMAND}`, { timeoutMs: 8000 })
+  if (green && !isHidden) $.ui.toast(`${green} /${COMMAND}`, { timeoutMs: 8000 })
   const red = regressionToast ? redText(list, run, lang) : null
-  if (red) $.ui.toast(`${red} /${COMMAND}`, { timeoutMs: 8000 })
+  if (red && !isHidden) $.ui.toast(`${red} /${COMMAND}`, { timeoutMs: 8000 })
 }
 
 const DEMO_NAMES = [
@@ -143,9 +150,32 @@ const runDemo = async ($: EngineInterface) => {
 
 const open = ($: EngineInterface) => $.ui.open({ id: PANE, title: WORDS[lang].pane }).catch(() => null)
 
+/** Changes the mod's `enabled` option as /config would; the engine reloads the mod with it. */
+const setEnabled = async ($: EngineInterface, value: boolean): Promise<string | null> => {
+  const result = await $.config.set({ key: 'test-hud.enabled', value } as never)
+  return result && 'deny' in result && result.deny !== undefined ? String(result.deny) : null
+}
+
+/** /test-hud on|off|hide|show: off is the option, in every conversation; hide is a stored flag. */
+const runSwitch = async ($: EngineInterface, choice: Switch): Promise<{ text?: string }> => {
+  const s = switchWords(lang, COMMAND)
+  if (choice === 'on' || choice === 'off') {
+    const want = choice === 'on'
+    if (want === isOn) return { text: want ? s.alreadyOn : s.alreadyOff }
+    const deny = await setEnabled($, want)
+    return { text: deny ? s.denied(deny) : want ? s.on : s.off }
+  }
+  isHidden = choice === 'hide'
+  await $.store.set(KEY_HIDDEN, isHidden)
+  show($, await read($, runs))
+  return { text: isHidden ? s.hidden : s.shown }
+}
+
 /** /test-hud and its arguments: what the command answers, and what the pane's verbs run. */
 const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: string }> => {
   const w = WORDS[lang]
+  const choice = switchOf(args)
+  if (choice) return runSwitch($, choice)
   switch (args.trim().toLowerCase()) {
     case 'clear':
       await update($, runs, () => [])
@@ -196,6 +226,7 @@ export const register: Register = (on, options) => {
   lang = langOf(options.language)
   regressionToast = options.regressionToast === true
   keepHistory = options.keepHistory === true
+  isOn = options.enabled !== false
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -203,10 +234,11 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: COMMAND,
       description: WORDS[lang].description,
-      argumentHint: '[clear|demo|help]',
+      argumentHint: '[on|off|hide|show|clear|demo|help]',
       immediate: true,
     })
-    if (keepHistory) {
+    isHidden = (await $.store.get(KEY_HIDDEN).catch(() => undefined)) === true
+    if (isOn && keepHistory) {
       root = await $.session.root()
       const stored = await $.store.get(storeKey()).catch(() => undefined)
       const kept = Array.isArray(stored) ? stored.filter(isRun) : []
@@ -217,6 +249,11 @@ export const register: Register = (on, options) => {
     }
     return result
   })
+
+  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
+
+  // Off: only the command above answers, so `/test-hud on` can bring the rest back.
+  if (!isOn) return
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const runner = runnerOf(e.command)
@@ -239,8 +276,6 @@ export const register: Register = (on, options) => {
     })
     return ran
   }).catch(($, e, next) => next(e)) // an observer: fail open, the call's result stands
-
-  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)

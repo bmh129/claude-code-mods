@@ -82,6 +82,7 @@ import {
   unblank,
   WORDS,
 } from './pad'
+import { switchWords } from './switch'
 
 const PANE = 'launchpad'
 /** The menu's own pane, under `/pad place pane`. */
@@ -91,6 +92,7 @@ const PANEL = 'launchpad-panel'
 const PROJECT_FILE = '.claude/launchpad.json'
 const AGENTS_DIR = '.claude/agents'
 const KEY_MENU = 'menu'
+// The menu's hidden flag. The key keeps its old name, `off`, so a menu already turned off stays hidden.
 const KEY_OFF = 'off'
 const KEY_PLACE = 'placement'
 
@@ -248,7 +250,7 @@ const PAD_ACTIONS: { verb: string; via?: 'pane' | 'ask' }[] = [
   { verb: 'remove', via: 'pane' },
   { verb: 'reset', via: 'ask' },
   { verb: 'place', via: 'ask' },
-  { verb: 'off' },
+  { verb: 'hide' },
   { verb: 'help' },
 ]
 
@@ -307,14 +309,14 @@ async function pressVerb($: EngineInterface, a: (typeof PAD_ACTIONS)[number]) {
 
 /**
  * The row under the buttons: /pad's own arguments, one press each. Those that run at once (the
- * pane, the list, off, help) run; those that take an argument or undo the person's list (add,
+ * pane, the list, hide, help) run; those that take an argument or undo the person's list (add,
  * remove, reset) wait in the prompt, so nothing is lost on a stray click.
  */
 function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | 'Text' | 'Button'>, more: number, off = false) {
   const { Box, Text, Button } = ui
   const w = WORDS[lang]
-  // Off, the row offers `on`: the way back is a press, not something to type.
-  const actions = off ? PAD_ACTIONS.map(a => (a.verb === 'off' ? { verb: 'on' } : a)) : PAD_ACTIONS
+  // Hidden, the row offers `show`: the way back is a press, not something to type.
+  const actions = off ? PAD_ACTIONS.map(a => (a.verb === 'hide' ? { verb: 'show' } : a)) : PAD_ACTIONS
   return (
     <Box flexDirection="row" flexWrap="wrap">
       {more > 0 && <Text dimColor>{`${w.more(more)} · `}</Text>}
@@ -479,6 +481,11 @@ async function runPad($: EngineInterface, args: string): Promise<{ text?: string
     case '':
     case 'show': {
       await load($)
+      // show also brings back a menu that hide took away.
+      if (verb.toLowerCase() === 'show' && (await read($, isOff))) {
+        await $.store.set(KEY_OFF, false)
+        await update($, isOff, () => false)
+      }
       if (await read($, isOff)) return { text: w.isOff }
       if (!(await shown($)).length) return { text: w.empty }
       const place = await read($, placement)
@@ -501,14 +508,23 @@ async function runPad($: EngineInterface, args: string): Promise<{ text?: string
       return { text: w.placed[where] }
     }
 
-    // Kept across sessions. Off hides every card, those already in the transcript too; the
-    // commands and the pane go on working, to set the menu up before turning it back on.
+    // Kept across sessions. Hide takes away every card, those already in the transcript too; the
+    // commands and the pane go on working, to set the menu up before showing it again.
+    case 'hide': {
+      await $.store.set(KEY_OFF, true)
+      await update($, isOff, () => true)
+      return { text: w.off }
+    }
+
+    // The mod itself, in every conversation: the `enabled` option, which a reload applies.
     case 'off':
     case 'on': {
-      const off = verb.toLowerCase() === 'off'
-      await $.store.set(KEY_OFF, off)
-      await update($, isOff, () => off)
-      return { text: off ? w.off : w.on }
+      const s = switchWords(lang, 'pad')
+      const want = verb.toLowerCase() === 'on'
+      if (want === isEnabled) return { text: want ? s.alreadyOn : s.alreadyOff }
+      const result = await $.config.set({ key: 'launchpad.enabled', value: want } as never)
+      const deny = result && 'deny' in result && result.deny !== undefined ? String(result.deny) : null
+      return { text: deny ? s.denied(deny) : want ? s.on : s.off }
     }
 
     case 'panel': {
@@ -560,11 +576,15 @@ async function runPad($: EngineInterface, args: string): Promise<{ text?: string
   }
 }
 
+/** The `enabled` option; off, only /pad answers. */
+let isEnabled = true
+
 export const register: Register = (on, options) => {
   // The options alone until session.start can read the system's LANG and which terminal this is.
   lang = langOf(options.language)
   style = styleOf(options.icons)
   const showOnStart = options.showOnStart !== false
+  isEnabled = options.enabled !== false
   placeOption = placementOf(options.placement)
   let w = WORDS[lang]
 
@@ -578,10 +598,11 @@ export const register: Register = (on, options) => {
       name: 'pad',
       description:
         lang === 'en'
-          ? 'Shortcuts: /pad shows them; configuration, list, add, remove, reset, place, off, on'
-          : 'Atalhos: /pad mostra; configuration, list, add, remove, reset, place, off, on',
-      argumentHint: '[configuration|list|add|remove|reset|place|off|on]',
+          ? 'Shortcuts: /pad shows them; configuration, list, add, remove, reset, place, hide, show, off, on'
+          : 'Atalhos: /pad mostra; configuration, list, add, remove, reset, place, hide, show, off, on',
+      argumentHint: '[configuration|list|add|remove|reset|place|hide|show|off|on]',
     })
+    if (!isEnabled) return result
     await load($, true)
     const now = await $.session.model().catch(() => '')
     if (now) await update($, model, () => now)
@@ -591,6 +612,11 @@ export const register: Register = (on, options) => {
     }
     return result
   })
+
+  on('command.run', { command: 'pad' }, ($, e) => runPad($, e.args))
+
+  // Off: only /pad answers, so `/pad on` can bring the rest back.
+  if (!isEnabled) return
 
   // Watches the engine list the commands, to learn which take an argument.
   on('command.describe', async ($, e, next) => {
@@ -613,7 +639,6 @@ export const register: Register = (on, options) => {
     return result
   }).catch(($, e, next) => next(e))
 
-  on('command.run', { command: 'pad' }, ($, e) => runPad($, e.args))
 
   // The main loop's model and effort, as each request goes out: the panel's active chips.
   on('turn.step', async function* ($, e, next) {

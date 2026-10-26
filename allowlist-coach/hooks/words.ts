@@ -76,7 +76,7 @@ const minutes = (ms: number) => Math.floor(ms / 60_000)
 
 export const WORDS: Record<Lang, Words> = {
   'pt-BR': {
-    description: 'Diálogos de permissão por regra: /allowlist abre o painel; allow <n>, dismiss <n>, remove <n>, reset [<n>], help',
+    description: 'Diálogos de permissão por regra: /allowlist abre o painel; on, off, hide, show, allow <n>, dismiss <n>, remove <n>, reset [<n>], help',
     pane: 'Allowlist',
     hint: (root, t) => `Diálogos de permissão respondidos em ${root}. Uma regra é oferecida depois de ${t} aprovações sem recusa.`,
     empty: 'Nenhum diálogo de permissão respondido neste projeto ainda.',
@@ -142,12 +142,15 @@ export const WORDS: Record<Lang, Words> = {
       '/allowlist remove 1    tira do allow a regra 1 que o coach adicionou (pergunta antes)',
       '/allowlist reset 1     zera a contagem da regra 1 (pergunta antes)',
       '/allowlist reset       apaga as contagens deste projeto (pergunta antes)',
+      '/allowlist hide        segue contando, sem toast nem nota no diálogo; o painel abre',
+      '/allowlist show        traz de volta os avisos',
+      '/allowlist off | on    desliga em todas as conversas | liga',
       'O número é o do painel. A regra escrita por extenso também vale.',
     ].join('\n'),
     failedToRun: what => `Não deu para rodar: ${what}`,
   },
   en: {
-    description: 'Permission dialogs per rule: /allowlist opens the pane; allow <n>, dismiss <n>, remove <n>, reset [<n>], help',
+    description: 'Permission dialogs per rule: /allowlist opens the pane; on, off, hide, show, allow <n>, dismiss <n>, remove <n>, reset [<n>], help',
     pane: 'Allowlist',
     hint: (root, t) => `Permission dialogs answered in ${root}. A rule is offered after ${t} approvals and no refusal.`,
     empty: 'No dialogs answered in this project yet.',
@@ -213,6 +216,9 @@ export const WORDS: Record<Lang, Words> = {
       '/allowlist remove 1    take rule 1 out of allow, when the coach added it (asks first)',
       "/allowlist reset 1     reset rule 1's count (asks first)",
       "/allowlist reset       clear this project's counts (asks first)",
+      '/allowlist hide        keeps counting, with no toast or dialog note; the pane still opens',
+      '/allowlist show        bring the notices back',
+      '/allowlist off | on    turn it off in every conversation | on',
       'The number is the one in the pane. The rule written out works too.',
     ].join('\n'),
     failedToRun: what => `Could not run: ${what}`,

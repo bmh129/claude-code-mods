@@ -35,6 +35,9 @@ the most once they all finish.
 /watch clear        drop finished and demo agents
 /watch clear done   drop finished agents only
 /watch clear demo   drop demo agents only
+/watch hide         keep tracking, with no toast or status line (kept across sessions)
+/watch show         bring them back
+/watch off | on     turn the mod off or on in every conversation
 /watch help         list the commands
 ```
 
@@ -46,6 +49,7 @@ Set them in `/config`, or under `pluginConfigs` in `settings.json`.
 
 | Option | Default | What it does |
 | --- | --- | --- |
+| `enabled` | on | Off keeps only the mod's command, which turns it back on. `/watch on` and `off` change it too |
 | `stallMinutes` | 5 | Minutes of no model request and no tool call before a running agent counts as stalled |
 | `language` | `auto` | `auto`, `pt-BR` or `en`. `auto` follows the system's `LANG`: Portuguese for `pt_*`, English otherwise |
 | `icons` | `auto` | `emoji` draws the stall warning as `⚠`, `symbol` as `!`. `auto` uses `symbol` in a JetBrains IDE's terminal and `emoji` elsewhere |
