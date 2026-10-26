@@ -11,6 +11,7 @@ import {
   isWarned,
   modelsOf,
   modLabel,
+  modState,
   iconFor,
   iconOf,
   MODS,
@@ -330,7 +331,28 @@ test('on and off: the state of a mod that toggles, from its enabled row', async 
   expect(toggleOf(PLAIN, [{ key: 'plain-view.enabled', value: true }])).toBe(true)
   expect(toggleOf(PLAIN, [{ key: 'plain-view.enabled', value: false }])).toBe(false)
   expect(toggleOf(PLAIN, [])).toBeNull()
-  expect(toggleOf(MODS[0]!, [{ key: 'limits-meter.enabled', value: true }])).toBeNull() // does not toggle
+  expect(toggleOf({ plugin: 'x', command: 'x', toggles: false }, [{ key: 'x.enabled', value: true }])).toBeNull() // does not toggle
+  expect(MODS.every(m => m.toggles)).toBe(true) // every mod has `enabled` since A1
+})
+
+test('P3: a row\'s state: off from the enabled option, hidden from the eye, unknown with no option row', async () => {
+  const rows = (v: boolean) => [{ key: 'limits-meter.enabled', value: v }]
+  const lm = MODS[0]!
+  expect(modState(lm, rows(true), [])).toBe('on')
+  expect(modState(lm, rows(true), ['limits-meter'])).toBe('hidden')
+  expect(modState(lm, rows(false), ['limits-meter'])).toBe('off') // off wins over hidden
+  expect(modState(lm, [], [])).toBe('unknown')
+  expect(modState({ plugin: 'x', command: 'x', toggles: false }, rows(true), [])).toBe('unknown')
+})
+
+test('P3 and P1: every collection mod has a description and every /pad verb a label, in both languages', async () => {
+  for (const l of ['pt-BR', 'en'] as const) {
+    for (const m of MODS) expect(WORDS[l].switchboard.mods[m.plugin]).toBeTruthy()
+    for (const v of ['configuration', 'list', 'add', 'remove', 'reset', 'place', 'hide', 'show', 'help']) expect(WORDS[l].verbs[v]).toBeTruthy()
+  }
+  // the label follows the language and no Portuguese screen shows the English verb
+  expect(WORDS['pt-BR'].verbs.configuration).toBe('configurar')
+  expect(WORDS.en.verbs.configuration).toBe('configure')
 })
 
 test('model chips: the plain aliases of the /config row, else haiku, sonnet, opus', async () => {

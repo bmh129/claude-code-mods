@@ -18,11 +18,12 @@
 //            its own, a tab like other mods' panes, with the card's tiles.
 //            Kept across sessions; the `placement` option is the default.
 //   panel    `◆ pad`, a bordered button at the end of the engine's hint line in every placement,
-//            or /pad panel: a pane with the session's model and effort as chips (a press runs
-//            /model or /effort), a warning on opus and max when the 5-hour window passes 70%,
-//            a button per mod of this collection installed (it opens the mod's pane) and the
-//            shortcuts. /pad configuration lists the mods missing, with their install command
-//            for the prompt.
+//            or /pad panel: a pane with the session's model and effort as one-line chips (a press
+//            runs /model or /effort), a warning on opus and max when the 5-hour window passes
+//            70%, then two tabs. Mods: a switchboard, a row per mod of this collection installed
+//            with a toggle (/x on, off), an eye (/x hide, show) and its pane one press away, a
+//            `quiet` toggle and the install command of each one missing. Shortcuts: the menu's
+//            buttons. /pad configuration lists the mods missing too.
 //   project  .claude/launchpad.json adds the repository's buttons. They come from the repo, so
 //            a press only puts the text in the prompt: the person reads it before pressing Enter.
 //
@@ -64,6 +65,7 @@ import {
   MAX_SHOWN,
   modelsOf,
   modLabel,
+  modState,
   modsOf,
   moveId,
   windowOf,
@@ -96,6 +98,8 @@ const KEY_MENU = 'menu'
 // The menu's hidden flag. The key keeps its old name, `off`, so a menu already turned off stays hidden.
 const KEY_OFF = 'off'
 const KEY_PLACE = 'placement'
+// The mods the eye hid from this panel: their names. Each mod keeps its own hide flag.
+const KEY_EYES = 'eyes'
 
 const menu = atom({ plugin: 'launchpad', key: 'menu' } as const, [] as Pad[])
 const project = atom({ plugin: 'launchpad', key: 'project' } as const, [] as Pad[])
@@ -106,6 +110,9 @@ const isOff = atom({ plugin: 'launchpad', key: 'isOff' } as const, false)
 const placement = atom({ plugin: 'launchpad', key: 'placement' } as const, 'header' as Placement)
 const model = atom({ plugin: 'launchpad', key: 'model' } as const, '')
 const effort = atom({ plugin: 'launchpad', key: 'effort' } as const, null as Effort | null)
+const tab = atom({ plugin: 'launchpad', key: 'tab' } as const, 'mods' as 'mods' | 'shortcuts')
+const eyes = atom({ plugin: 'launchpad', key: 'eyes' } as const, [] as string[])
+const rev = atom({ plugin: 'launchpad', key: 'rev' } as const, 0)
 
 /**
  * Argument hints by command name, as the engine lists the commands for the typeahead and /help
@@ -173,6 +180,8 @@ async function load($: EngineInterface, fresh = false) {
   const place = await $.store.get(KEY_PLACE).catch(() => undefined)
   await update($, placement, () => (typeof place === 'string' ? placementOf(place) : placeOption))
   await update($, project, () => parseProject(typeof raw === 'string' ? raw : null))
+  const hid = await $.store.get(KEY_EYES).catch(() => undefined)
+  await update($, eyes, () => (Array.isArray(hid) ? hid.filter((x): x is string => typeof x === 'string') : []))
   if (fresh || (await read($, catalog)).length === 0) {
     const list = await readCatalog($)
     await update($, catalog, () => list)
@@ -327,7 +336,7 @@ function padRow($: EngineInterface, ui: Pick<Elements[keyof Elements], 'Box' | '
       {actions.map((a, i) => (
         <Box key={`padrow:${a.verb}`} flexDirection="row">
           {i > 0 && <Text dimColor> · </Text>}
-          <Button key={`cmd:${a.verb}`} plain dimColor label={a.verb} onPress={() => pressVerb($, a)} />
+          <Button key={`cmd:${a.verb}`} plain dimColor label={w.verbs[a.verb] ?? a.verb} onPress={() => pressVerb($, a)} />
         </Box>
       ))}
     </Box>
@@ -442,6 +451,81 @@ function control(
     )
   }
   return <Button key={key} label={label} onPress={onPress} />
+}
+
+/**
+ * P2: a chip or action in one line. The terminal draws `[ label ]` and a desktop its native secondary
+ * button (A5); the current choice is bold accent text, not a button; a warned chip shows its label in
+ * the warning color.
+ */
+function flat(
+  $: EngineInterface,
+  e: { surface: string },
+  key: string,
+  label: string,
+  onPress: () => unknown,
+  opts: { isOn?: boolean; isWarned?: boolean } = {},
+) {
+  const { Button, Text } = $.ui.resolve(e as never) as Elements['desktop']
+  if (opts.isOn) {
+    return (
+      <Text key={`on:${key}`} color="claude" bold>
+        {label}
+      </Text>
+    )
+  }
+  if (opts.isWarned) {
+    return (
+      <Button key={key} {...SECONDARY} onPress={onPress}>
+        <Text color="warning">{label}</Text>
+      </Button>
+    )
+  }
+  return <Button key={key} {...SECONDARY} label={label} onPress={onPress} />
+}
+
+/**
+ * A mod's toggle. The terminal draws `[ ● on ]`; a desktop a green block with a knob, the closest a
+ * pressable gets to the switchboard's pill: `Svg` draws a rounded one but takes no press, and a Button's
+ * children are text and `Text` only.
+ */
+function toggle($: EngineInterface, e: { surface: string }, key: string, isOn: boolean, onPress: () => unknown) {
+  const sb = WORDS[lang].switchboard
+  if (e.surface === 'terminal') return flat($, e, key, isOn ? sb.on : sb.off, onPress)
+  const { Button, Text } = $.ui.resolve(e as never) as Elements['desktop']
+  return (
+    <Button key={key} label={isOn ? sb.on : sb.off} onPress={onPress}>
+      <Text backgroundColor={isOn ? 'success' : 'inactive'} color="inverseText">
+        {isOn ? '   ● ' : ' ●   '}
+      </Text>
+    </Button>
+  )
+}
+
+/** The eye: hides a mod's own drawing (`/x hide`) or brings it back (`/x show`). Only on a mod that is on. */
+async function pressEye($: EngineInterface, m: ModInfo, wasHidden: boolean) {
+  await runMod($, m, wasHidden ? 'show' : 'hide')
+  const list = (await read($, eyes)).filter(x => x !== m.plugin)
+  const next = wasHidden ? list : [...list, m.plugin]
+  await $.store.set(KEY_EYES, next)
+  await update($, eyes, () => next)
+}
+
+/** The toggle: `/x on` or `/x off` (the mod's `enabled` option), then the panel redraws from the new rows. */
+async function pressToggle($: EngineInterface, m: ModInfo, wasOn: boolean) {
+  await runMod($, m, wasOn ? 'off' : 'on')
+  await update($, rev, n => n + 1)
+}
+
+/** The quiet row's toggle: the same `/pad quiet` the chip on the hint line runs. */
+async function pressQuiet($: EngineInterface) {
+  const w = WORDS[lang]
+  try {
+    const result = await runQuiet($, isQuiet ? 'off' : 'on')
+    $.ui.toast(result.text ?? '')
+  } catch {
+    $.ui.toast(w.failed('/pad quiet'))
+  }
 }
 
 /** Opens the control panel, with the model read fresh. Opened by the person, it seats at any width. */
@@ -793,15 +877,41 @@ export const register: Register = (on, options) => {
     const { installed, missing } = modsOf(all)
     const icons = e.surface === 'terminal' ? style : 'emoji'
     const shortcuts = panelShortcuts(await shown($)).slice(0, MAX_SHOWN)
-    const columns = Math.max(20, (e.props.bodyColumns || e.viewport?.columns || 80) - 2)
     const chipRow = (label: string, command: 'model' | 'effort', values: readonly string[], active: string | null) => (
       <Box key={`chips:${command}`} flexDirection="row" flexWrap="wrap" alignItems="center" gap={1}>
         <Text dimColor>{label}</Text>
         {values.map(v =>
-          control($, e, `${command}:${v}`, `${v === active ? '●' : '○'} ${v}`, () => choose($, command, v), { isOn: v === active, isWarned: isWarned(v, fiveHour) }),
+          flat($, e, `${command}:${v}`, `${v === active ? '●' : '○'} ${v}`, () => choose($, command, v), { isOn: v === active, isWarned: isWarned(v, fiveHour) }),
         )}
       </Box>
     )
+
+    const sb = w.switchboard
+    const tabNow = await read($, tab)
+    const hidden = await read($, eyes)
+    await read($, rev)
+    const modRow = (m: ModInfo) => {
+      const state = modState(m, rows, hidden)
+      const isOff = state === 'off'
+      const note = isOff ? sb.offNote(m.command) : state === 'hidden' ? sb.hiddenNote(m.command) : sb.opens(m.command)
+      return (
+        <Box key={`row:${m.plugin}`} flexDirection="column">
+          <Box flexDirection="row" alignItems="center" gap={1}>
+            <Box width={22}>
+              {isOff ? (
+                <Text dimColor>{modLabel(m, icons)}</Text>
+              ) : (
+                <Button key={`mod:${m.plugin}`} plain label={modLabel(m, icons)} onPress={() => runMod($, m)} />
+              )}
+            </Box>
+            {!isOff && state !== 'unknown' && flat($, e, `eye:${m.plugin}`, state === 'hidden' ? '◌' : '◉', () => pressEye($, m, state === 'hidden'))}
+            {state !== 'unknown' && toggle($, e, `toggle:${m.plugin}`, !isOff, () => pressToggle($, m, !isOff))}
+          </Box>
+          <Text dimColor>{sb.mods[m.plugin] ?? ''}</Text>
+          <Text dimColor>{note}</Text>
+        </Box>
+      )
+    }
 
     return (
       <Box flexDirection="column" paddingX={1} gap={1}>
@@ -820,59 +930,57 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
-        <Box flexDirection="column">
-          <Text bold>{p.mods}</Text>
-          {installed.length > 0 && (
-            <Box flexDirection="column">
-              <Box flexDirection="row" flexWrap="wrap" gap={1}>
-                {installed.map(m => control($, e, `mod:${m.plugin}`, modLabel(m, icons), () => runMod($, m), { width: 20 }))}
-              </Box>
-              {installed
-                .filter(m => m.toggles)
-                .map(m => {
-                  const isOn = toggleOf(m, rows)
-                  return (
-                    <Box key={`toggle:${m.plugin}`} flexDirection="row" alignItems="center" gap={2}>
-                      <Text>{modLabel(m, icons)}</Text>
-                      {isOn !== null && <Text color={isOn ? 'success' : 'inactive'}>{isOn ? p.isOn : p.isOff}</Text>}
-                      {isOn !== false && control($, e, `off:${m.plugin}`, p.turnOff, () => runMod($, m, 'off'))}
-                      {isOn !== true && control($, e, `on:${m.plugin}`, p.turnOn, () => runMod($, m, 'on'))}
-                    </Box>
-                  )
-                })}
-            </Box>
-          )}
-          {/* What is missing, each with a button that puts its install command in the prompt. */}
-          {missing.length === 0 ? (
-            <Text dimColor>{w.modsSection.allInstalled}</Text>
+        <Box flexDirection="row" gap={1}>
+          {tabNow === 'mods' ? <Text bold>{sb.tabs.mods}</Text> : <Button key="tab:mods" plain dimColor label={sb.tabs.mods} onPress={() => update($, tab, () => 'mods')} />}
+          <Text dimColor>·</Text>
+          {tabNow === 'shortcuts' ? (
+            <Text bold>{sb.tabs.shortcuts}</Text>
           ) : (
-            <Box flexDirection="column">
-              <Text dimColor>{installed.length === 0 ? p.noMods : w.modsSection.missing}</Text>
-              <Box flexDirection="row" flexWrap="wrap" gap={1}>
-                {missing.map(m => control($, e, `install:${m.plugin}`, w.modsSection.install(m.plugin), () => fill($, installText(m.plugin))))}
-              </Box>
-            </Box>
+            <Button key="tab:shortcuts" plain dimColor label={sb.tabs.shortcuts} onPress={() => update($, tab, () => 'shortcuts')} />
           )}
         </Box>
 
-        {shortcuts.length > 0 && (
-          <Box flexDirection="column">
-            <Text bold>{p.shortcuts}</Text>
-            {e.surface === 'terminal' ? (
-              tiles($, $.ui.resolve({ ...e, surface: 'terminal' }), shortcuts, columns)
-            ) : (
-              <Box flexDirection="row" flexWrap="wrap" columnGap={1} rowGap={1}>
-                {shortcuts.map(x => (
-                  <Button key={`pad:${x.id}`} label={buttonLabel(x, 'emoji')} onPress={() => press($, x)} />
-                ))}
+        {tabNow === 'mods' ? (
+          <Box flexDirection="column" gap={1}>
+            {installed.length > 0 && <Box flexDirection="column" gap={1}>{installed.map(modRow)}</Box>}
+            <Box flexDirection="column">
+              <Box flexDirection="row" alignItems="center" gap={1}>
+                <Box width={22}>
+                  <Text bold>{sb.quietTitle}</Text>
+                </Box>
+                {toggle($, e, 'toggle:quiet', isQuiet, () => pressQuiet($))}
+              </Box>
+              <Text dimColor>{sb.quietNote}</Text>
+              <Text dimColor>/pad quiet</Text>
+            </Box>
+            {/* What is missing, each with a button that puts its install command in the prompt. */}
+            {missing.length > 0 && (
+              <Box flexDirection="column">
+                <Text dimColor>{installed.length === 0 ? p.noMods : w.modsSection.missing}</Text>
+                <Box flexDirection="row" flexWrap="wrap" gap={1}>
+                  {missing.map(m => flat($, e, `install:${m.plugin}`, w.modsSection.install(m.plugin), () => fill($, installText(m.plugin))))}
+                </Box>
               </Box>
             )}
+            <Box flexDirection="column">
+              {sb.rules.map(line => (
+                <Text key={`rule:${line}`} dimColor>
+                  {line}
+                </Text>
+              ))}
+            </Box>
           </Box>
+        ) : shortcuts.length > 0 ? (
+          <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+            {shortcuts.map(x => flat($, e, `pad:${x.id}`, buttonLabel(x, icons), () => press($, x)))}
+          </Box>
+        ) : (
+          <Text dimColor>{w.empty}</Text>
         )}
 
         <Box flexDirection="column" alignItems="flex-start">
           {padRow($, { Box, Text, Button }, 0, await read($, isOff))}
-          {control($, e, 'close', p.close, () => $.ui.close({ id: PANEL }))}
+          <Button key="close" {...SECONDARY} label={p.close} onPress={() => $.ui.close({ id: PANEL })} />
         </Box>
       </Box>
     )

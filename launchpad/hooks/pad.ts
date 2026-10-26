@@ -92,6 +92,23 @@ type Words = {
     shortcuts: string
     close: string
   }
+  /** The panel's Mods tab: a row per mod with its eye and its toggle, the quiet row and the rules. */
+  switchboard: {
+    tabs: { mods: string; shortcuts: string }
+    /** What each mod of the collection does, one line, by plugin name. */
+    mods: Record<string, string>
+    on: string
+    off: string
+    /** The line under a row: what its command does, or how to undo the state it is in. */
+    opens: (command: string) => string
+    hiddenNote: (command: string) => string
+    offNote: (command: string) => string
+    quietTitle: string
+    quietNote: string
+    rules: string[]
+  }
+  /** The label of each /pad argument on the row under the menu: the command it runs stays in English. */
+  verbs: Record<string, string>
   /** The Mods section of /pad configuration. */
   modsSection: {
     title: string
@@ -232,6 +249,24 @@ export const WORDS: Record<Lang, Words> = {
       shortcuts: 'Atalhos',
       close: 'Fechar',
     },
+    switchboard: {
+      tabs: { mods: 'Mods', shortcuts: 'Atalhos' },
+      mods: {
+        'limits-meter': 'Relógio do cache, limites de 5h e da semana, contexto',
+        'allowlist-coach': 'Sugere regras para o que você sempre aprova',
+        'agent-watch': 'Um cartão por subagente, com progresso',
+        'plain-view': 'Recolhe o ruído das ferramentas num resumo',
+      },
+      on: '● on',
+      off: '○ off',
+      opens: command => `/${command} abre · hide oculta`,
+      hiddenNote: command => `/${command} show mostra`,
+      offNote: command => `/${command} on liga`,
+      quietTitle: '◦ discreto',
+      quietNote: 'Nenhum mod desenha nada sozinho. Erro, permissão e pergunta continuam.',
+      rules: ['Desligado vale em toda conversa. Oculto mantém ligado, fora de vista.', 'Mod novo da coleção aparece aqui sozinho.'],
+    },
+    verbs: { configuration: 'configurar', list: 'listar', add: 'adicionar', remove: 'remover', reset: 'restaurar', place: 'posição', hide: 'ocultar', show: 'mostrar', help: 'ajuda' },
     modsSection: {
       title: 'Mods',
       missing: 'Faltam (o comando vai para o prompt; Enter instala):',
@@ -369,6 +404,24 @@ export const WORDS: Record<Lang, Words> = {
       shortcuts: 'Shortcuts',
       close: 'Close',
     },
+    switchboard: {
+      tabs: { mods: 'Mods', shortcuts: 'Shortcuts' },
+      mods: {
+        'limits-meter': 'Cache clock, 5h and weekly limits, context',
+        'allowlist-coach': 'Suggests rules for what you keep approving',
+        'agent-watch': 'A card per subagent, with progress',
+        'plain-view': 'Folds tool noise into a short summary',
+      },
+      on: '● on',
+      off: '○ off',
+      opens: command => `/${command} opens · hide hides`,
+      hiddenNote: command => `/${command} show brings it back`,
+      offNote: command => `/${command} on turns it on`,
+      quietTitle: '◦ quiet',
+      quietNote: 'No mod draws anything by itself. Errors, permissions and questions stay.',
+      rules: ['Off means off in every chat. Hidden keeps it on but out of sight.', 'New mods of this collection appear here by themselves.'],
+    },
+    verbs: { configuration: 'configure', list: 'list', add: 'add', remove: 'remove', reset: 'reset', place: 'place', hide: 'hide', show: 'show', help: 'help' },
     modsSection: {
       title: 'Mods',
       missing: 'Missing (the command goes into the prompt; Enter installs):',
@@ -702,13 +755,14 @@ export const EXPENSIVE = ['opus', 'max']
 export const WARN_AT = 70
 
 /**
- * This collection's mods besides the launchpad: what the panel's Mods section looks for. test-hud
- * is left out on purpose: it is for developers, and it leaves this collection after plan v2.
+ * This collection's mods besides the launchpad: what the panel's Mods tab looks for. Every one has
+ * the `enabled` option since A1, so the panel toggles them all. test-hud is left out on purpose: it
+ * is for developers, and it leaves this collection after plan v2.
  */
 export const MODS: readonly ModInfo[] = [
-  { plugin: 'limits-meter', command: 'limits', toggles: false },
-  { plugin: 'allowlist-coach', command: 'allowlist', toggles: false },
-  { plugin: 'agent-watch', command: 'watch', toggles: false },
+  { plugin: 'limits-meter', command: 'limits', toggles: true },
+  { plugin: 'allowlist-coach', command: 'allowlist', toggles: true },
+  { plugin: 'agent-watch', command: 'watch', toggles: true },
   { plugin: 'plain-view', command: 'plain-view', toggles: true },
 ]
 
@@ -778,6 +832,21 @@ export const toggleOf = (m: ModInfo, rows: readonly { key: string; value: unknow
   if (!m.toggles) return null
   const row = rows.find(r => r.key === `${m.plugin}.enabled`)
   return typeof row?.value === 'boolean' ? row.value : null
+}
+
+/** What a mod's row says: on, hidden (on, out of sight), off, or unknown (no `enabled` row: an older mod). */
+export type ModState = 'on' | 'hidden' | 'off' | 'unknown'
+
+/**
+ * A mod's state for its row. `off` comes from the mod's own `enabled` option. `hidden` is what the
+ * launchpad last set with the eye: another mod's hide flag is in its own store, which this one cannot
+ * read, so a `/x hide` typed by hand shows here only after the next press.
+ */
+export const modState = (m: ModInfo, rows: readonly { key: string; value: unknown }[], eyes: readonly string[]): ModState => {
+  const on = toggleOf(m, rows)
+  if (on === null) return 'unknown'
+  if (!on) return 'off'
+  return eyes.includes(m.plugin) ? 'hidden' : 'on'
 }
 
 /** A mod's button label: its command's icon and the plugin's name, the same in every language. */
