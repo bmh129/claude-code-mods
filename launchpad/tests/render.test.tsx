@@ -1112,7 +1112,7 @@ const button = (tree: unknown, key: string) => nodes(tree, 'Button').find(b => b
 const hasHover = (tree: unknown, key: string) => button(tree, key)?.hover !== undefined
 const textColor = (tree: unknown, key: string) => (nodes(button(tree, key), 'Text')[0]?.props ?? {}).color
 
-test('hover: the filled hover is on boxed buttons only. Terminal: shortcuts and close. Desktop: also the controls', async ($, on) => {
+test('hover: the filled hover is on boxed buttons only: the controls, the shortcuts and close, on both surfaces', async ($, on) => {
   sbWorld(on)
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -1121,8 +1121,8 @@ test('hover: the filled hover is on boxed buttons only. Terminal: shortcuts and 
     // never on a toggle, the eye (icon only), the footer verbs, the tabs, the quiet toggle
     for (const k of ['toggle:limits-meter', 'toggle:agent-watch', 'toggle:quiet', 'eye:limits-meter', 'tab:shortcuts', 'cmd:configuration', 'cmd:help']) expect(hasHover(tree, k)).toBe(false)
     expect(hasHover(tree, 'close')).toBe(true)
-    // the controls: a box on the desktop, plain text on the terminal
-    for (const k of ['model:sonnet', 'effort:low']) expect(hasHover(tree, k)).toBe(surface === 'desktop')
+    // the controls are boxes on both surfaces (`[ ○ sonnet ]` on the terminal)
+    for (const k of ['model:sonnet', 'effort:low']) expect(hasHover(tree, k)).toBe(true)
     // the fill: the accent behind the label, the inverse color on it, a scope of its own so no keyed Box is needed
     expect(button(tree, 'close')?.hover).toEqual({ scope: 'hover:close', backgroundColor: 'claude', color: 'inverseText' })
     await ui.press({ key: 'tab:shortcuts' })

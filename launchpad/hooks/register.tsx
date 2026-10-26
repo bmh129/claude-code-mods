@@ -469,7 +469,7 @@ function control(
  * button (A5); the current choice is bold accent text, not a button. A `color` (a theme key) or a
  * warned chip draws the label in it, as the children of the Button: a `label` beside children wins on
  * a desktop and hides them. `hover` puts the filled hover on a boxed button: `both` surfaces, or
- * `desk` for one that is plain text on the terminal.
+ * `desk` for one that is plain text on the terminal (none now: the controls are `[ ]` there too).
  */
 function flat(
   $: EngineInterface,
@@ -897,7 +897,7 @@ export const register: Register = (on, options) => {
       <Box key={`chips:${command}`} flexDirection="row" flexWrap="wrap" alignItems="center" gap={1}>
         <Text dimColor>{label}</Text>
         {values.map(v =>
-          flat($, e, `${command}:${v}`, `${v === active ? '●' : '○'} ${v}`, () => choose($, command, v), { isOn: v === active, isWarned: isWarned(v, fiveHour), hover: 'desk' }),
+          flat($, e, `${command}:${v}`, `${v === active ? '●' : '○'} ${v}`, () => choose($, command, v), { isOn: v === active, isWarned: isWarned(v, fiveHour), hover: 'both' }),
         )}
       </Box>
     )
