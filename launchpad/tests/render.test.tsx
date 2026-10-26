@@ -598,15 +598,16 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
-test('P2: the chips, the shortcuts and the close button are one-line secondary buttons, no tile', async ($, on) => {
+test('P2: the shortcuts and close are one-line secondary buttons, the chips plain text on the terminal and boxes on desktop, no tile', async ($, on) => {
   world(on, files, undefined, [...COMMANDS, ...CONTROLS])
   await start($)
   await step($, 'claude-opus-5-5', 'high')
   const ui = await panel($)
   let tree = await ui.drawn()
   let drawn = JSON.stringify(tree)
-  expect(variantOf(tree, 'model:sonnet')).toBe('secondary')
-  expect(variantOf(tree, 'effort:low')).toBe('secondary')
+  expect(variantOf(tree, 'model:sonnet')).toBeUndefined() // terminal: plain text, no brackets
+  expect(button(tree, 'model:sonnet')?.props?.plain).toBe(true)
+  expect(button(tree, 'effort:low')?.props?.plain).toBe(true)
   expect(variantOf(tree, 'close')).toBe('secondary')
   expect(drawn).toContain('"label":"○ sonnet"')
   expect(drawn).not.toContain('borderStyle') // the 3-line tile is gone from the panel
@@ -1112,7 +1113,7 @@ const button = (tree: unknown, key: string) => nodes(tree, 'Button').find(b => b
 const hasHover = (tree: unknown, key: string) => button(tree, key)?.hover !== undefined
 const textColor = (tree: unknown, key: string) => (nodes(button(tree, key), 'Text')[0]?.props ?? {}).color
 
-test('hover: the filled hover is on boxed buttons only: the controls, the shortcuts and close, on both surfaces', async ($, on) => {
+test('hover: the filled hover is on boxed buttons only. Terminal: the shortcuts and close. Desktop: also the controls', async ($, on) => {
   sbWorld(on)
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -1121,8 +1122,8 @@ test('hover: the filled hover is on boxed buttons only: the controls, the shortc
     // never on a toggle, the eye (icon only), the footer verbs, the tabs, the quiet toggle
     for (const k of ['toggle:limits-meter', 'toggle:agent-watch', 'toggle:quiet', 'eye:limits-meter', 'tab:shortcuts', 'cmd:configuration', 'cmd:help']) expect(hasHover(tree, k)).toBe(false)
     expect(hasHover(tree, 'close')).toBe(true)
-    // the controls are boxes on both surfaces (`[ ○ sonnet ]` on the terminal)
-    for (const k of ['model:sonnet', 'effort:low']) expect(hasHover(tree, k)).toBe(true)
+    // the controls: a box on the desktop, plain text on the terminal (the engine underlines it under the pointer)
+    for (const k of ['model:sonnet', 'effort:low']) expect(hasHover(tree, k)).toBe(surface === 'desktop')
     // the fill: the accent behind the label, the inverse color on it, a scope of its own so no keyed Box is needed
     expect(button(tree, 'close')?.hover).toEqual({ scope: 'hover:close', backgroundColor: 'claude', color: 'inverseText' })
     await ui.press({ key: 'tab:shortcuts' })

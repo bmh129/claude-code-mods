@@ -469,7 +469,8 @@ function control(
  * button (A5); the current choice is bold accent text, not a button. A `color` (a theme key) or a
  * warned chip draws the label in it, as the children of the Button: a `label` beside children wins on
  * a desktop and hides them. `hover` puts the filled hover on a boxed button: `both` surfaces, or
- * `desk` for one that is plain text on the terminal (none now: the controls are `[ ]` there too).
+ * `desk` for one that is plain text on the terminal. `text`: on the terminal the chip is plain text
+ * (`○ sonnet`, no brackets) and takes the engine's own underline under the pointer.
  */
 function flat(
   $: EngineInterface,
@@ -477,7 +478,7 @@ function flat(
   key: string,
   label: string,
   onPress: () => unknown,
-  opts: { isOn?: boolean; isWarned?: boolean; color?: string; hover?: 'both' | 'desk' } = {},
+  opts: { isOn?: boolean; isWarned?: boolean; color?: string; hover?: 'both' | 'desk'; text?: boolean } = {},
 ) {
   const { Button, Text } = $.ui.resolve(e as never) as Elements['desktop']
   if (opts.isOn) {
@@ -489,6 +490,15 @@ function flat(
   }
   const hover = opts.hover === 'both' || (opts.hover === 'desk' && e.surface !== 'terminal') ? { hover: hoverFill(key) } : {}
   const color = opts.isWarned ? 'warning' : opts.color
+  if (opts.text && e.surface === 'terminal') {
+    return color ? (
+      <Button key={key} plain onPress={onPress}>
+        <Text color={color}>{label}</Text>
+      </Button>
+    ) : (
+      <Button key={key} plain label={label} onPress={onPress} />
+    )
+  }
   if (color) {
     return (
       <Button key={key} {...SECONDARY} {...hover} onPress={onPress}>
@@ -897,7 +907,7 @@ export const register: Register = (on, options) => {
       <Box key={`chips:${command}`} flexDirection="row" flexWrap="wrap" alignItems="center" gap={1}>
         <Text dimColor>{label}</Text>
         {values.map(v =>
-          flat($, e, `${command}:${v}`, `${v === active ? '●' : '○'} ${v}`, () => choose($, command, v), { isOn: v === active, isWarned: isWarned(v, fiveHour), hover: 'both' }),
+          flat($, e, `${command}:${v}`, `${v === active ? '●' : '○'} ${v}`, () => choose($, command, v), { isOn: v === active, isWarned: isWarned(v, fiveHour), hover: 'desk', text: true }),
         )}
       </Box>
     )
