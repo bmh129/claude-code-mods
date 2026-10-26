@@ -10,6 +10,8 @@
 //   lists               the window of a long list a pane shows, for ui.scroll.
 //   verbs               a row of a command's arguments, one press each.
 //   numbers             tokens, elapsed time, clipped text and short model names.
+//   hierarchy           fig (key figure, bold in the state's color), lbl (its label, dim)
+//                       and figLead (a phrase like `3 running`: its first word a figure, the rest a label).
 
 import type { Elements, PromptFillArgs } from 'claude-code'
 
@@ -110,4 +112,42 @@ export const shortModel = (m?: string) => {
   const hit = /(opus|sonnet|haiku|fable)[-\s]?(\d+(?:[-.]\d+)?)?/i.exec(m)
   if (!hit) return m.length > 14 ? `${m.slice(0, 13)}…` : m
   return `${hit[1]!.toLowerCase()}${hit[2] ? ` ${hit[2].replace('-', '.')}` : ''}`
+}
+
+/** What a figure says about itself: fine, near a limit, over it. No tone, no state: just bold. */
+export type Tone = 'ok' | 'warn' | 'bad'
+
+/** The theme key of a tone; `undefined` for a figure with no state. */
+export const toneKey = (tone?: Tone) => (tone === 'bad' ? 'error' : tone === 'warn' ? 'warning' : tone === 'ok' ? 'success' : undefined)
+
+/** A key figure: bold, in the color of its state (success, warning, error), plain `text` when it has none. */
+export function fig(ui: Pick<Elements[keyof Elements], 'Text'>, text: string, tone?: Tone, key?: string) {
+  const { Text } = ui
+  return (
+    <Text key={key} bold color={toneKey(tone)}>
+      {text}
+    </Text>
+  )
+}
+
+/** The label of a figure: dim gray, the same everywhere. */
+export function lbl(ui: Pick<Elements[keyof Elements], 'Text'>, text: string, key?: string) {
+  const { Text } = ui
+  return (
+    <Text key={key} dimColor>
+      {text}
+    </Text>
+  )
+}
+
+/** A phrase that starts with its figure (`3 running`, `46k tokens`): the first word a figure, the rest a label. */
+export function figLead(ui: Pick<Elements[keyof Elements], 'Text'>, text: string, tone?: Tone, key?: string) {
+  const { Text } = ui
+  const at = text.indexOf(' ')
+  return (
+    <Text key={key}>
+      {fig(ui, at < 0 ? text : text.slice(0, at), tone)}
+      {at < 0 ? null : lbl(ui, text.slice(at))}
+    </Text>
+  )
 }

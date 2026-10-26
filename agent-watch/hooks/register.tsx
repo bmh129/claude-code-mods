@@ -53,7 +53,7 @@ import {
 import type { SortBy } from './watch'
 import { PHRASES, phraseOf } from './phrases'
 import type { IconStyle, Lang, Verb } from './ui'
-import { clip, elapsed, fillArgs, glyph, langOf, linesOf, shortModel, styleOf, tokens, verbRow, windowOf } from './ui'
+import { clip, elapsed, fig, fillArgs, glyph, langOf, lbl, figLead, linesOf, shortModel, styleOf, tokens, verbRow, windowOf } from './ui'
 import { COMMAND, WORDS } from './words'
 
 const PANE = 'agent-watch'
@@ -376,7 +376,15 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column">
           <Text dimColor>{w.hint}</Text>
           <Text>
-            <Text dimColor>{w.counts(running.length, done, tokens(sum))}</Text>
+            {w
+              .counts(running.length, done, tokens(sum))
+              .split(' · ')
+              .map((part, i) => (
+                <Text key={`count:${i}`}>
+                  {i > 0 && lbl({ Text }, ' · ')}
+                  {figLead({ Text }, part, 'ok')}
+                </Text>
+              ))}
             {stalled > 0 && <Text color="warning" bold>{`  ${warn()} ${w.stalled(stalled)}`}</Text>}
           </Text>
         </Box>
@@ -432,9 +440,13 @@ export const register: Register = (on, options) => {
                 </Box>
                 <Text>
                   <Text dimColor>{`${rail}   `}</Text>
-                  <Text bold>{tokens(total(a.tokens)).padStart(5)}</Text>
+                  {fig({ Text }, tokens(total(a.tokens)).padStart(5), 'ok')}
                   <Text dimColor>{isWide ? `  in ${tokens(a.tokens.input + a.tokens.cacheRead + a.tokens.cacheWrite)} out ${tokens(a.tokens.output)}` : ''}</Text>
-                  <Text dimColor>{`  ${w.tools(a.tools, a.errors)}  ${clock}  `}</Text>
+                  {lbl({ Text }, '  ')}
+                  {figLead({ Text }, w.tools(a.tools, a.errors), a.errors > 0 ? 'warn' : 'ok')}
+                  {lbl({ Text }, '  ')}
+                  {fig({ Text }, clock, isStuck ? 'warn' : 'ok')}
+                  {lbl({ Text }, '  ')}
                   <Text color={isStuck ? 'warning' : undefined} dimColor={!isStuck}>
                     {state.slice(0, Math.max(10, width - 50))}
                   </Text>
