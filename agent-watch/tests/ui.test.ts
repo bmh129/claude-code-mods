@@ -3,7 +3,7 @@
 
 import { expect, test } from 'claude-code/testing'
 
-import { blankIn, clip, elapsed, fillArgs, fig, glyph, langOf, lbl, figLead, linesOf, shortModel, styleOf, toneKey, tokens, windowOf } from '../hooks/ui'
+import { bar, barOf, blankIn, clip, elapsed, fillArgs, fig, glyph, langOf, lbl, figLead, linesOf, shortModel, styleOf, toneKey, tokens, windowOf } from '../hooks/ui'
 
 test('language: the option when it names one, else Portuguese for a pt LANG, else English', async () => {
   expect(langOf('pt-BR', 'en_US.UTF-8')).toBe('pt-BR')
@@ -82,4 +82,13 @@ test('hierarchy: a figure is bold in the color of its state, a label is dim', as
   expect(rest!.props).toMatchObject({ dimColor: true })
   expect(rest!.children).toEqual([' running'])
   expect((figLead(ui, 'pass') as unknown as Node).children).toHaveLength(1)
+})
+
+test('the progress bar: solid cells for the share done, shaded for the rest, kept inside the width', async () => {
+  expect(barOf(3, 5)).toBe('███░░')
+  expect(barOf(9, 5)).toBe('█████')
+  expect(barOf(-1, 3)).toBe('░░░')
+  expect(bar(10, 50)).toBe('█████░░░░░')
+  expect(bar(4, 140)).toBe('████')
+  expect(bar(4, -5)).toBe('░░░░')
 })

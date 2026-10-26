@@ -100,6 +100,19 @@ export const PRIMARY = { variant: 'primary' } as const
  */
 export const SECONDARY = { variant: 'secondary' } as const
 
+/** The one progress bar of every mod: solid cells for what is done, shaded for what is left. */
+export const BAR_FULL = '█'
+export const BAR_EMPTY = '░'
+
+/** `███░░`: `filled` of `width` cells solid, kept between 0 and `width`. */
+export const barOf = (filled: number, width: number) => {
+  const n = Math.max(0, Math.min(width, Math.round(filled)))
+  return BAR_FULL.repeat(n) + BAR_EMPTY.repeat(width - n)
+}
+
+/** A bar `width` cells wide filled to `percent`, 0 to 100. */
+export const bar = (width: number, percent: number) => barOf((percent / 100) * width, width)
+
 /** 950, 1.2k, 46k, 1.2M. */
 export const tokens = (n: number) => {
   if (n < 1000) return String(n)

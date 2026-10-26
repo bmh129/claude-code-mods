@@ -1,5 +1,6 @@
 import type { CacheClock, ContextGroups, ContextRow, Limit, Samples, Snapshot, Ttl, Turn } from '../types'
 import type { Lang } from './ui'
+import { bar } from './ui'
 import { WORDS } from './words'
 
 export const LIMIT_ALERTS = [80, 90, 100]
@@ -44,10 +45,7 @@ export const resetIn = (at: number | null, now: number, lang: Lang = 'en') => {
 
 export const pct = (n: number | null) => (n === null ? '–' : `${Math.round(n)}%`)
 
-export const bar = (width: number, percent: number) => {
-  const filled = Math.round((Math.max(0, Math.min(100, percent)) / 100) * width)
-  return '█'.repeat(filled) + '░'.repeat(width - filled)
-}
+export { bar }
 
 /** The theme's colors: error from `dangerAt` (90%), warning from `warnAt` (70%), success below. */
 export const tone = (percent: number | null, warnAt = 70, dangerAt = 90) =>

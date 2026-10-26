@@ -53,7 +53,7 @@ import {
 import type { SortBy } from './watch'
 import { PHRASES, phraseOf } from './phrases'
 import type { IconStyle, Lang, Verb } from './ui'
-import { PRIMARY, SECONDARY, clip, elapsed, fig, fillArgs, glyph, langOf, lbl, figLead, linesOf, shortModel, styleOf, tokens, verbRow, windowOf } from './ui'
+import { BAR_EMPTY, BAR_FULL, PRIMARY, SECONDARY, clip, elapsed, fig, fillArgs, glyph, langOf, lbl, figLead, linesOf, shortModel, styleOf, tokens, verbRow, windowOf } from './ui'
 import { switchOf, switchWords } from './switch'
 import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
@@ -433,14 +433,14 @@ export const register: Register = (on, options) => {
             <Text>
               {parts.map(p => (
                 <Text key={`share:${p.agent?.id ?? 'rest'}`} color={colorOf(p.agent)} dimColor={p.agent === null}>
-                  {(p.agent === null ? '░' : '█').repeat(p.cells)}
+                  {(p.agent === null ? BAR_EMPTY : BAR_FULL).repeat(p.cells)}
                 </Text>
               ))}
             </Text>
             <Box flexDirection="row" flexWrap="wrap" gap={2}>
               {parts.map(p => (
                 <Text key={`legend:${p.agent?.id ?? 'rest'}`}>
-                  <Text color={colorOf(p.agent)} dimColor={p.agent === null}>{p.agent === null ? '░ ' : '█ '}</Text>
+                  <Text color={colorOf(p.agent)} dimColor={p.agent === null}>{`${p.agent === null ? BAR_EMPTY : BAR_FULL} `}</Text>
                   <Text dimColor>{`${clip(p.agent ? nameOf(p.agent) : w.others, 20)} ${Math.round((p.tokens / sum) * 100)}%`}</Text>
                 </Text>
               ))}
