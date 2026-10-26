@@ -76,6 +76,10 @@ painel lista cada categoria e cada servidor MCP.
 
 ![limits-meter: faixa acima do prompt, o painel /limits e seus toasts](screenshots/limits-meter.svg)
 
+**O relógio do cache e o keep warm** ([mp4](screenshots/limits-meter-cache.mp4)): a contagem regressiva depois de uma resposta, a barra de contexto por grupo, o painel `/limits` e o keep warm avisando antes de o cache esfriar. Desenhado a partir da saída real do mod por `scripts/screenshots/limits-meter-demo.sh`.
+
+![limits-meter: a contagem do cache, a barra de contexto por grupo, o painel /limits e o keep warm](screenshots/limits-meter-cache.gif)
+
 #### Instalação
 
 ```

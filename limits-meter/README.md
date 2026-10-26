@@ -4,6 +4,10 @@ Plan limits and context above the prompt, in tokens and percent. Never money.
 
 ![limits-meter: band above the prompt, the /limits pane and its toasts](../screenshots/limits-meter.svg)
 
+The cache clock and keep warm ([mp4](../screenshots/limits-meter-cache.mp4)):
+
+![limits-meter: the cache countdown, the context bar by group, the /limits pane and keep warm](../screenshots/limits-meter-cache.gif)
+
 - **Band above the prompt:** the main thread's model, in the accent color, and its effort as a
   five-step gauge, `opus 5.5 ▰▰▰▱▱ high` (low to max, `max` in the warning color),
   the 5-hour and weekly plan windows with their reset times, the context window's fill, and

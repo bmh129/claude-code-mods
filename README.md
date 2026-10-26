@@ -73,6 +73,10 @@ legend under the band; the pane lists each category and each MCP server.
 
 ![limits-meter: band above the prompt, the /limits pane and its toasts](screenshots/limits-meter.svg)
 
+**The cache clock and keep warm** ([mp4](screenshots/limits-meter-cache.mp4)): the countdown after a reply, the context bar by group, the `/limits` pane, and keep warm pinging before the cache goes cold. Drawn from the mod's real output by `scripts/screenshots/limits-meter-demo.sh`.
+
+![limits-meter: the cache countdown, the context bar by group, the /limits pane and keep warm](screenshots/limits-meter-cache.gif)
+
 #### Install
 
 ```
