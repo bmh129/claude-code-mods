@@ -16,10 +16,43 @@ const turn = (n: number) => ({
   usage: { input_tokens: 1000, output_tokens: 1300, cache_read_input_tokens: 40_000, cache_creation_input_tokens: 2000, model: 'claude-opus-5-5' },
 })
 
-type World = { toasts: string[]; fills: string[]; logs: string[]; opened: string[]; closed: string[]; clock: ReturnType<typeof mock.clock> }
+// The window by the engine's categories at 116k of 200k: system 23k, MCP 14k (github 9k, notion 5k), messages 79k.
+const BREAKDOWN = {
+  categories: [
+    { name: 'System prompt', tokens: 6000, kind: 'used' },
+    { name: 'System tools', tokens: 12_000, kind: 'used' },
+    { name: 'MCP tools', tokens: 14_000, kind: 'used' },
+    { name: 'Memory files', tokens: 3000, kind: 'used' },
+    { name: 'Skills', tokens: 2000, kind: 'used' },
+    { name: 'Messages', tokens: 79_000, kind: 'used' },
+    { name: 'Free space', tokens: 51_000, kind: 'free' },
+    { name: 'Autocompact buffer', tokens: 33_000, kind: 'buffer' },
+  ],
+  maxTokens: 200_000,
+  mcpTools: [
+    { name: 'mcp__github__a', serverName: 'github', tokens: 9000, isLoaded: true },
+    { name: 'mcp__notion__a', serverName: 'notion', tokens: 5000, isLoaded: true },
+  ],
+}
+const SWITCH = { from_model: 'claude-sonnet-5-5', to_model: 'claude-opus-5-5', requested_model: 'opus', source: 'command', context_tokens: 0, prompt_cache_warm: false, cache_ttl: '1h', estimated_cache_write_usd: 0, pricing: 'catalog' }
+const MIN = 60_000
 
-function engine(on: any, env: Record<string, string> = {}, beneath?: string): World {
-  const world: World = { toasts: [], fills: [], logs: [], opened: [], closed: [], clock: mock.clock(on, { now: NOW }) }
+type World = {
+  toasts: string[]
+  fills: string[]
+  logs: string[]
+  opened: string[]
+  closed: string[]
+  submits: string[]
+  origins: string[]
+  asked: string[]
+  /** What the person picks when asked; null dismisses the question. */
+  answer: string | null
+  clock: ReturnType<typeof mock.clock>
+}
+
+function engine(on: any, env: Record<string, string> = {}, beneath?: string, breakdown: boolean | object = false): World {
+  const world: World = { toasts: [], fills: [], logs: [], opened: [], closed: [], submits: [], origins: [], asked: [], answer: 'yes, keep warm', clock: mock.clock(on, { now: NOW }) }
   mock.store(on)
   on('env.get', ($: any, e: any) => ({ value: env[e.name] }) as never)
   on('command.register', () => ({ value: undefined }) as never)
@@ -30,6 +63,15 @@ function engine(on: any, env: Record<string, string> = {}, beneath?: string): Wo
   on('ui.log', ($: any, e: any) => (world.logs.push(e.text), { value: undefined }) as never)
   on('prompt.fill', ($: any, e: any) => (world.fills.push(e.text), { isFilled: true, text: e.text, cursor: e.text.length }) as never)
   on('session.measure', () => ({ changed: ['context', 'rateLimits'] }) as never)
+  if (breakdown) on('session.usage', () => ({ value: { context: { ...MEASURE.context, breakdown: breakdown === true ? BREAKDOWN : breakdown }, rateLimits: [] } }) as never)
+  on('prompt.submit', ($: any, e: any) => (world.submits.push(e.text), world.origins.push(JSON.stringify(e.origin)), { text: e.text }) as never)
+  on('tool.call', ($: any, e: any) => {
+    if (e.tool !== 'AskUserQuestion') return { result: 'ok', text: 'ok' } as never
+    const question = String(e.questions[0].question)
+    world.asked.push(question)
+    if (world.answer === null) return { deny: 'dismissed' } as never
+    return { result: { questions: e.questions, answers: { [question]: world.answer } } } as never
+  })
   on('turn.complete', () => ({ text: 'done' }) as never)
   on('turn.step', async function* () {
     return { turnId: 't1', index: 0, answer: '', toolUses: [], stopReason: 'end_turn' }
@@ -134,7 +176,7 @@ test('the pane footer: hide and show run, help writes to the transcript, Close c
   const p = await pane($)
   await p.press({ key: 'verb:help' })
   expect(world.logs[0]).toContain('/limits          open the pane')
-  expect(world.logs).toHaveLength(4)
+  expect(world.logs).toHaveLength(5)
   await p.press({ key: 'verb:hide' })
   expect(world.logs.at(-1)).toBe('Band hidden. /limits show brings it back.')
   const b = await band($)
@@ -153,9 +195,9 @@ test('the pane fits the turns to its rows', async ($, on) => {
   await start($)
   await $.session.measure(MEASURE as never)
   for (let i = 1; i <= 20; i++) await $.turn.complete(turn(i) as never)
-  // 25 rows: 20 for the rest of the pane with two plan windows, the trend line and the
-  // costly-switch section, 5 turns.
-  const p = await pane($, 'terminal', 25)
+  // 30 rows: 25 for the rest of the pane with two plan windows, the cache section, the trend line
+  // and the costly-switch section, 5 turns.
+  const p = await pane($, 'terminal', 30)
   const shown = JSON.stringify(await p.drawn())
   expect(shown).toContain('#20')
   expect(shown).toContain('#16')
@@ -608,4 +650,305 @@ test('effort max from the turn end warns once, as from a request', async ($, on)
   await $.classic.Stop({ stop_hook_active: false, effort: { level: 'max' } } as never)
   await step($, SONNET, 'max')
   expect(world.toasts).toEqual(['5h at 82%: at this pace the window runs out in ~18 min · /limits'])
+})
+
+// ---- cache clock, keep-warm and the context groups (0.5.0)
+
+/** A model switch brings the TTL; the turn after it gives the end of the last request (NOW). */
+const warm = async ($: any, ttl = '1h') => {
+  await $.classic.PostModelSwitch({ ...SWITCH, cache_ttl: ttl } as never)
+  await $.turn.complete(turn(1) as never)
+}
+const drawnBand = async ($: any, surface = 'terminal') => {
+  const b = await band($, surface)
+  const drawn = JSON.stringify(await b.drawn())
+  await b.unmount()
+  return drawn
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`cache clock: warm counts down in the success color on ${surface}`, async ($, on) => {
+    const world = engine(on)
+    await start($, surface)
+    await $.session.measure(MEASURE as never)
+    await warm($)
+    await world.clock.advance(8 * MIN)
+    const drawn = await drawnBand($, surface)
+    expect(drawn).toMatch(/"color":"success","bold":true[^}]*\},"children":\["⏱ 52:00"/)
+    expect(drawn).not.toContain('"cache "},{"type":"Text","children":["93%"')
+    expect(drawn).not.toContain('keep warm')
+  })
+}
+
+test('cache clock: cooling turns warning and offers keep warm; cold says so with one toast', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await warm($)
+  await world.clock.advance(52 * MIN)
+  const cooling = await drawnBand($)
+  expect(cooling).toMatch(/"color":"warning","bold":true[^}]*\},"children":\["⏱ 08:00"/)
+  expect(cooling).toContain('keep warm')
+  await world.clock.advance(9 * MIN)
+  const cold = await drawnBand($)
+  expect(cold).toMatch(/"color":"error","bold":true[^}]*\},"children":\["❄ cold"/)
+  expect(cold).not.toContain('keep warm')
+  await world.clock.advance(5 * MIN)
+  expect(world.toasts.filter(t => t.startsWith('Cache cold'))).toEqual(['Cache cold: the next reply re-reads 116k tokens with no cache'])
+})
+
+test('cache clock: a 5-minute TTL cools in its last minute', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await warm($, '5m')
+  await world.clock.advance(3 * MIN)
+  expect(await drawnBand($)).toContain('⏱ 02:00')
+  expect(await drawnBand($)).not.toContain('keep warm')
+  await world.clock.advance(90_000)
+  expect(await drawnBand($)).toMatch(/"color":"warning","bold":true[^}]*\},"children":\["⏱ 00:30"/)
+})
+
+test('cache clock: with no TTL the band keeps the hit rate, and the pane says why', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await $.turn.complete(turn(1) as never)
+  const drawn = await drawnBand($)
+  expect(drawn).toContain('"cache "')
+  expect(drawn).toContain('93%')
+  expect(drawn).not.toContain('⏱')
+  const p = await pane($)
+  const shown = JSON.stringify(await p.drawn())
+  expect(shown).toContain('Cache TTL unknown')
+  expect(shown).toContain('last turn hit rate: 93%')
+  await p.unmount()
+})
+
+test('cache clock: a model switch empties the clock until the next request, and keeps the new TTL', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await warm($)
+  expect(await drawnBand($)).toContain('⏱ 60:00')
+  await $.classic.PostModelSwitch({ ...SWITCH, cache_ttl: '5m' } as never)
+  expect(await drawnBand($)).not.toContain('⏱')
+  await $.turn.complete(turn(2) as never)
+  expect(await drawnBand($)).toContain('⏱ 05:00')
+})
+
+test('cache clock: the symbol icon style draws one-cell glyphs', { options: { icons: 'symbol' } }, async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await warm($)
+  expect(await drawnBand($)).toContain('◷ 60:00')
+  await world.clock.advance(61 * MIN)
+  expect(await drawnBand($)).toContain('* cold')
+})
+
+test('cache clock: the pane counts, says what it means and offers keep warm', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await warm($)
+  // The pane redraws every second while it is mounted, so it is open only for each reading.
+  const read = async () => {
+    const p = await pane($)
+    const shown = JSON.stringify(await p.drawn())
+    await p.unmount()
+    return shown
+  }
+  await world.clock.advance(8 * MIN)
+  let shown = await read()
+  expect(shown).toContain('⏱ 52:00')
+  expect(shown).toContain('of 1 h (TTL of the last reply)')
+  expect(shown).toContain('Reply now and 116k tokens come from cache')
+  expect(shown).toContain('keep warm')
+  await world.clock.advance(46 * MIN)
+  shown = await read()
+  expect(shown).toContain('Cooling: reply or keep it warm')
+  await world.clock.advance(10 * MIN)
+  expect(await read()).toContain('Cache cold: the next reply re-reads 116k tokens with no cache')
+})
+
+test('keep warm: asks first, then sends before the cache goes cold, and the turn refreshes the clock', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await warm($)
+  await world.clock.advance(52 * MIN)
+  const b = await band($)
+  await b.press({ key: 'keep' })
+  expect(world.asked).toHaveLength(1)
+  expect(world.asked[0]).toContain('re-reads 116k tokens from cache and spends plan')
+  expect(world.toasts.at(-1)).toBe('Keep-warm on. Stops at your next prompt or in 2 h.')
+  const kept = JSON.stringify(await b.drawn())
+  expect(kept).toContain('↺ 08:00'.replace('↺', '♻'))
+  expect(kept).toContain('stop')
+  expect(kept).not.toContain('keep warm')
+  expect(world.submits).toEqual([])
+  await world.clock.advance(3 * MIN + 1000)
+  expect(world.submits).toHaveLength(1)
+  expect(world.submits[0]).toContain('Keep-warm ping from limits-meter')
+  // The ping's turn ends: the clock restarts and the turn stays out of the table.
+  await $.turn.complete(turn(2) as never)
+  expect(JSON.stringify(await b.drawn())).toContain('♻ 60:00')
+  const p = await pane($)
+  expect(JSON.stringify(await p.drawn())).not.toContain('#2')
+  await p.unmount()
+  await b.unmount()
+})
+
+test('keep warm: sends again for each lap, and stops by itself after 2 h', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await warm($)
+  expect((await run($, 'keep-warm on')).text).toBe('Keep-warm on. Stops at your next prompt or in 2 h.')
+  await world.clock.advance(56 * MIN)
+  expect(world.submits).toHaveLength(1)
+  await $.turn.complete(turn(2) as never)
+  await world.clock.advance(56 * MIN)
+  expect(world.submits).toHaveLength(2)
+  await $.turn.complete(turn(3) as never)
+  await world.clock.advance(10 * MIN)
+  expect(world.toasts.at(-1)).toBe('Keep-warm stopped: 2 h passed.')
+  await world.clock.advance(60 * MIN)
+  expect(world.submits).toHaveLength(2)
+})
+
+test('keep warm: a no, a dismissed question, or no TTL turns nothing on', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  expect((await run($, 'keep-warm on')).text).toContain('cache TTL is not known yet')
+  expect(world.asked).toHaveLength(0)
+  await warm($)
+  world.answer = 'no'
+  expect((await run($, 'keep-warm on')).text).toBe('Keep-warm off.')
+  world.answer = null
+  expect((await run($, 'keep-warm on')).text).toBe('Keep-warm off.')
+  await world.clock.advance(58 * MIN)
+  expect(world.submits).toEqual([])
+  expect((await run($, 'keep-warm')).text).toBe('Keep-warm off.')
+})
+
+test('keep warm: /limits keep-warm off stops it quietly', async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await warm($)
+  await run($, 'keep-warm on')
+  expect((await run($, 'keep-warm')).text).toBe('Keep-warm on. Stops at your next prompt or in 2 h.')
+  const before = world.toasts.length
+  expect((await run($, 'keep-warm off')).text).toBe('Keep-warm off.')
+  expect(world.toasts).toHaveLength(before)
+  await world.clock.advance(58 * MIN)
+  expect(world.submits).toEqual([])
+})
+
+test("keep warm: the person's own prompt stops it, with a toast", async ($, on) => {
+  const world = engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await warm($)
+  await run($, 'keep-warm on')
+  await $.prompt.submit({ text: 'and now the tests' } as never)
+  expect(world.toasts.at(-1)).toBe('Keep-warm stopped: your prompt already refreshes the cache.')
+  await world.clock.advance(58 * MIN)
+  expect(world.submits).toEqual(['and now the tests'])
+})
+
+test('keep warm: the transcript draws the ping as one dim row, and leaves other messages alone', async ($, on) => {
+  engine(on)
+  await start($)
+  const row = async (origin: unknown, text: string) => {
+    const m = await $.ui.mount({ plugin: 'limits-meter', surface: 'terminal', component: 'UserMessage', props: { text, origin, isExpanded: false }, viewport: { columns: 80, rows: 40 } } as never)
+    const drawn = JSON.stringify(await m.drawn())
+    await m.unmount()
+    return drawn
+  }
+  const ping = await row({ kind: 'plugin', name: 'limits-meter' }, 'Keep-warm ping from limits-meter. Reply with a single "." and nothing else.')
+  expect(ping).toContain('"dimColor":true')
+  expect(ping).toContain('♻ keep-warm (message from limits-meter)')
+  expect(ping).not.toContain('Reply with')
+  expect(await row({ kind: 'composer' }, 'hello')).not.toContain('keep-warm')
+})
+
+test('keep warm: Portuguese from LANG', async ($, on) => {
+  const world = engine(on, { LANG: 'pt_BR.UTF-8' })
+  await start($)
+  await $.session.measure(MEASURE as never)
+  await warm($)
+  world.answer = 'sim, manter'
+  expect((await run($, 'keep-warm on')).text).toBe('Manter quente ligado. Para no seu próximo prompt ou em 2 h.')
+  expect(world.asked[0]).toContain('Manter o cache quente?')
+  await $.prompt.submit({ text: 'e agora os testes' } as never)
+  expect(world.toasts.at(-1)).toBe('Manter quente parou: o seu prompt já renova o cache.')
+})
+
+test('context groups: the band bar is split and a legend names each color', async ($, on) => {
+  engine(on, {}, undefined, true)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  const drawn = await drawnBand($)
+  // 58% of the window: 23k system, 14k MCP, 79k messages share it by tokens (12, 7, 39), 42% is free.
+  expect(drawn).toContain('"color":"suggestion"')
+  expect(drawn).toContain('"color":"claude"')
+  expect(drawn).toMatch(/"ctx  "[\s\S]*█ system 12%[\s\S]*█ MCP 7%[\s\S]*█ messages 39%[\s\S]*░ free 42%/)
+  expect(drawn).toContain('░░░░░')
+})
+
+test('context groups: at 87% the messages take the warning color, and below 90 columns the legend still names them', async ($, on) => {
+  engine(on, {}, undefined, true)
+  await start($)
+  await $.session.measure({ ...FULL, context: { tokens: 174_000, window: 200_000, percent: 87 } } as never)
+  const b = await $.ui.mount({ plugin: 'limits-meter', surface: 'terminal', component: 'AbovePrompt', props: { bodyColumns: 80, hasSurvey: false }, viewport: { columns: 80, rows: 40 } } as never)
+  const drawn = JSON.stringify(await b.drawn())
+  expect(drawn).toContain('"color":"warning"},"children":["█ messages')
+  expect(drawn).toContain('░ free 13%')
+  await b.unmount()
+})
+
+test('context groups: no breakdown from the engine keeps the single bar and no legend', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  const drawn = await drawnBand($)
+  expect(drawn).not.toContain('"color":"suggestion"')
+  expect(drawn).not.toContain('█ system')
+})
+
+test('context groups: a session with no MCP tools leaves MCP out of the legend', async ($, on) => {
+  engine(on, {}, undefined, { ...BREAKDOWN, categories: BREAKDOWN.categories.filter(c => c.name !== 'MCP tools'), mcpTools: [] })
+  await start($)
+  await $.session.measure(MEASURE as never)
+  const drawn = await drawnBand($)
+  expect(drawn).toContain('█ system')
+  expect(drawn).not.toContain('█ MCP')
+})
+
+test('context groups: the compact format keeps its numbers only', { options: { format: 'compact' } }, async ($, on) => {
+  engine(on, {}, undefined, true)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  const drawn = await drawnBand($)
+  expect(drawn).not.toContain('█')
+  expect(drawn).not.toContain('system')
+})
+
+test('context groups: the pane lists every category, each MCP server and the free space', async ($, on) => {
+  engine(on, {}, undefined, true)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  const p = await pane($)
+  const shown = JSON.stringify(await p.drawn())
+  for (const name of ['System prompt', 'System tools', 'Memory files', 'Skills', 'MCP · github', 'MCP · notion', 'Messages']) expect(shown).toContain(name)
+  expect(shown).not.toContain('MCP tools')
+  expect(shown).toContain('79k')
+  expect(shown).toContain('40%')
+  expect(shown).toContain('free')
+  expect(shown).toContain('≈ local engine estimate, the same figures as /context')
+  await p.unmount()
 })

@@ -22,7 +22,7 @@ Requer Claude Code 2.1.287 ou mais recente.
 
 | Mod | Comando | O que faz |
 | --- | --- | --- |
-| [limits-meter](limits-meter/) | `/limits` | Limites do plano e contexto acima do prompt: modelo e effort, janelas de 5 horas e semanal com horário de reset, ocupação do contexto, taxa de acerto do cache, tokens por turno, e um toast na troca cara de modelo perto do limite |
+| [limits-meter](limits-meter/) | `/limits` | Limites do plano, relógio do cache e contexto acima do prompt: modelo e effort, janelas de 5 horas e semanal com horário de reset, contagem regressiva do cache do prompt com um manter-quente opcional que gasta plano, contexto dividido por grupo (sistema, MCP, mensagens), tokens por turno, e um toast na troca cara de modelo perto do limite |
 | [allowlist-coach](allowlist-coach/) | `/allowlist` | Conta os diálogos de permissão por regra; depois de 5 aprovações sem nenhuma recusa, oferece adicionar a regra a `permissions.allow`, perguntando antes de gravar |
 | [agent-watch](agent-watch/) | `/watch` | Subagentes num relance: tokens por agente, um toast quando um trava e um resumo com o agente mais pesado quando terminam |
 | [test-hud](test-hud/) | `/test-hud` | Execuções de teste num relance: aprovados sobre o total na status line, um sparkline das falhas entre execuções, os testes que falham e um toast quando a suíte fica verde |
@@ -42,6 +42,7 @@ A faixa aparece sozinha depois da primeira resposta. Comandos:
 /limits          abre o painel: janelas do plano, contexto em tokens, os últimos 20 turnos
 /limits hide     esconde a faixa acima do prompt, também nas próximas sessões
 /limits show     traz a faixa de volta
+/limits keep-warm on|off  mantém o cache do prompt quente (pergunta antes, gasta plano)
 /limits warn N   avisa na troca cara com a janela de 5h a partir de N% (padrão 70)
 /limits help     lista os comandos
 ```
@@ -54,6 +55,17 @@ janela chega a 100% no ritmo atual, antes do reset, e desenha a ocupação do co
 turno. Trocar para um modelo maior (haiku < sonnet < opus < fable) ou para effort `max` com a
 janela de 5h em 70% ou mais mostra um toast com os minutos que restam no ritmo dos últimos 3
 turnos.
+
+A célula `cache` conta o tempo do cache do prompt (`⏱ 52:10`), passa para a cor de aviso nos
+últimos 10 minutos (no último minuto, num cache de 5 minutos) e vira `❄ frio` quando ele
+esgota, com um toast. Ela precisa do TTL do cache, que o engine informa numa troca de modelo e
+que o mod também lê de um turno de uma só chamada depois de uma pausa; enquanto não sabe, a
+célula mantém a taxa de acerto do último turno. `manter quente` (ou `/limits keep-warm on`)
+pergunta antes e então envia uma mensagem curta logo antes de o cache esfriar: é um turno de
+verdade, desenhado como uma linha dim. Para no seu próximo prompt ou depois de 2 horas. Gasta
+plano: é o único jeito de este mod chamar um modelo, e só se você ligar. A barra de contexto é
+dividida pelas categorias do engine (sistema, MCP, mensagens), com uma legenda sob a faixa; o
+painel lista cada categoria e cada servidor MCP.
 
 ![limits-meter: faixa acima do prompt, o painel /limits e seus toasts](screenshots/limits-meter.svg)
 
@@ -275,7 +287,7 @@ se conecta e cada chamada que faz.
 
 | Mod | Rede | Roda processos | Arquivos | Chama um modelo | Envia dados para algum lugar |
 | --- | --- | --- | --- | --- | --- |
-| limits-meter | Não | Não | Não | Não | Não |
+| limits-meter | Não | Não | Não | Só se você ligar o manter-quente: uma mensagem curta por volta do cache, até o seu próximo prompt ou 2 horas | Não |
 | allowlist-coach | Não | Não | Lê e grava `.claude/settings.local.json`, ou `.claude/settings.json` quando você escolhe, depois da sua confirmação | Não | Não |
 | agent-watch | Não | Não | Não | Não | Não |
 | test-hud | Não | Não | Lê a cópia salva pelo Bash de uma saída longa demais para mostrar inteira | Não | Não |
