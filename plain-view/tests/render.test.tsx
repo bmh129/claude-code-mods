@@ -1421,3 +1421,13 @@ test('quiet: the plan card goes away while rows still fold, and show does not un
   await run($, 'show')
   expect(await card($)).not.toContain('Montar o painel do tempo')
 })
+
+test('110 columns: a long status truncates, the step subject keeps its row', ON, async ($, on) => {
+  const w = engine(on)
+  await start($)
+  await prose($, w, 30)
+  const drawn = await card($, 'terminal', 110)
+  expect(drawn).toContain('lista parada')
+  expect(drawn).toContain('"flexShrink":0')
+  expect(drawn).toContain('"wrap":"truncate-end"')
+})
