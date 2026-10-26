@@ -40,18 +40,27 @@ session's model and effort in one click, this collection's mods, and the shortcu
     Code opens a pane only with the keyboard on it: `Esc` closes it and gives the prompt back.
 - **`◆ pad`, the control panel.** A bordered button under Claude Code's hint line, below the
   prompt, in every placement, and while the menu is off too. It opens a pane with:
-  - **Controls:** the models (`haiku · sonnet · opus`, or the plain names the `/config` model row
-    lists) and the effort levels (`low` to `max`) as buttons, the current ones marked `●`. A press
-    runs `/model sonnet` or `/effort low`, as typing would. The model comes from the session; the
-    effort from the last request, so before the first one none is marked. With the 5-hour window
-    at 70% or more, `opus` and `max` get a yellow border and a line says so; a press still
-    switches at once.
-  - **Mods:** a button for each mod of this collection installed, named as the plugin in every
-    language (`⏳ limits-meter`, `🔐 allowlist-coach`, `👀 agent-watch`, `📜 plain-view`), that opens its pane, then one for each missing, which puts its
-    `/plugin install` command in the prompt, or a line saying all are installed. test-hud is left
-    out: it is a tool for developers. A mod whose command takes `on` and `off` (plain-view) also
-    gets its switch, its state read from its `enabled` option.
-  - **Shortcuts:** the menu's tiles, less `Trocar modelo`, which the controls replace.
+  - **Controls**, always on top: the models (`haiku · sonnet · opus`, or the plain names the
+    `/config` model row lists) and the effort levels (`low` to `max`) as one-line buttons, the
+    current ones marked `●`. A press runs `/model sonnet` or `/effort low`, as typing would. The
+    model comes from the session; the effort from the last request, so before the first one none is
+    marked. With the 5-hour window at 70% or more, `opus` and `max` turn yellow and a line says so; a
+    press still switches at once.
+  - **Mods** tab, a switchboard: one row per mod of this collection installed, named as the plugin
+    in every language (`⏳ limits-meter`, `🔐 allowlist-coach`, `👀 agent-watch`, `📜 plain-view`),
+    with a line on what it does and its command. The name opens the mod's pane. The **toggle**
+    (`[ ● on ]` on the terminal, a green block on Claude Code desktop) runs `/x off` or `/x on`: off
+    in every conversation, read from the mod's `enabled` option. The **eye** (`◉`, `◌` when
+    hidden) runs `/x hide` or `/x show`: the mod stays on but out of sight. A mod that is off has no
+    eye and shows how to turn it on. A mod without the `enabled` option (an older version) shows
+    only its name. Another mod's hide flag lives in its own store, so the eye shows what the
+    launchpad last set; a `/x hide` typed by hand shows after the next press. Below the rows, a
+    `◦ quiet` toggle runs `/pad quiet`, the same as the chip on the hint line; then each mod missing, which
+    puts its `/plugin install` command in the prompt, and the rules: off means off in every chat,
+    hidden keeps it on but out of sight. test-hud is left out: it is a tool for developers.
+  - **Shortcuts** tab: the menu's buttons in one line each, less `Trocar modelo`, which the controls replace.
+  The labels of the `/pad` row follow the `language` option (`configurar · listar · …` or
+  `configure · list · …`); the button runs the English argument, which is also what you type.
   `/pad configuration` lists the mods installed and missing the same way.
 - **Up to 8 buttons** that work here. The defaults: compact the chat, see context, see limits,
   resume a chat, edit memory, switch model, explore the code, help.
@@ -68,8 +77,10 @@ session's model and effort in one click, this collection's mods, and the shortcu
 /pad remove 3                         drop button 3
 /pad reset                            back to the default buttons
 /pad place header | prompt | pane     where the menu shows: under the header, right above the prompt, or in a pane
-/pad off                              turn the menu off: no card at the start, after /clear or on /pad
-/pad on                               turn it back on
+/pad hide                             hide the menu: no card at the start, after /clear or on /pad
+/pad show                             show it again
+/pad off | on                         turn the launchpad itself off or on in every conversation
+/pad quiet [on | off]                 quiet mode: sets every mod's `quiet` option; bare, it flips it
 ```
 
 `/pad configuration` (or `/pad config`) opens a pane with your buttons, each with `↑`, `↓` and
@@ -83,9 +94,19 @@ button runs the command bare. A button saved with such blanks by an earlier vers
 (`/clear [name]`) is saved back bare once Claude Code lists the command. Once 8 buttons work, the
 pane says the menu is full until you remove one.
 
-`/pad off` is kept across sessions and hides the cards already in the conversation too. The
-other commands and the pane go on working, so you can set the menu up before `/pad on`. The
+`/pad hide` is kept across sessions and hides the cards already in the conversation too. The
+other commands and the pane go on working, so you can set the menu up before `/pad show`. (Before
+0.6.0 this was `/pad off`; a menu hidden that way stays hidden.) The
 `showOnStart` option below only stops the card at the start and after `/clear`.
+
+`/pad quiet` sets the `quiet` option of every mod of this collection at once (limits-meter,
+allowlist-coach, agent-watch, plain-view, test-hud and the launchpad). A quiet mod draws nothing by
+itself, as `hide` does, and keeps its command and pane; `/x show` does not undo it. Errors,
+permission requests and the agent's questions are never hidden, and limits-meter still draws one
+line from 95% of the 5-hour window. In quiet, the hint line keeps only `◦ quiet · show`; pressing
+`show`, or `/pad quiet off`, brings everything back. A mod installed before this version has no
+`quiet` option: the answer names it, and updating it fixes that. Each change reloads the mods, so
+the first draw after it takes a moment.
 
 The icon in `/pad add` is optional. It can be any emoji or symbol, or a built-in name between
 colons (`/pad add :chart: Vendas | /cost`): `folder`, `doc`, `pen`, `search`, `compress`, `gauge`,
@@ -123,6 +144,7 @@ name (`launchpad@lfernandes-mods`).
 
 | Option | Values | Default |
 | --- | --- | --- |
+| `enabled` | `true` or `false`. Off keeps only the `/pad` command, which turns the mod back on; `/pad on` and `off` change it too | `true` |
 | `language` | `auto`, `pt-BR`, `en`: the default buttons and the messages. `auto` follows the system's `LANG`: Portuguese for `pt_*`, English otherwise and when `LANG` is unset | `auto` |
 | `icons` | `auto`, `emoji`, or `symbol` (`⇲ ▥ ◔`) for terminals that draw emoji at odd widths. `auto` uses symbols in a JetBrains IDE's terminal (IntelliJ, PyCharm, ...: `TERMINAL_EMULATOR=JetBrains-JediTerm`), which gives many emoji one column, and emoji elsewhere | `auto` |
 | `showOnStart` | `false` shows the menu only on `/pad` | `true` |

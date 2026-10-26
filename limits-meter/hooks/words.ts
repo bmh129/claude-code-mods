@@ -86,7 +86,7 @@ type Words = {
 
 export const WORDS: Record<Lang, Words> = {
   'pt-BR': {
-    description: 'Limites do plano, relógio do cache e contexto: /limits abre o painel; hide, show, keep-warm, warn, help',
+    description: 'Limites do plano, relógio do cache e contexto: /limits abre o painel; on, off, hide, show, keep-warm, warn, help',
     pane: 'Limites e contexto',
     hint: 'Números que o engine informa a cada turno. Tokens e percentual, nunca dinheiro.',
     labels: { five_hour: '5h', seven_day: 'sem', spend_limit: 'gasto' },
@@ -116,6 +116,7 @@ export const WORDS: Record<Lang, Words> = {
       '/limits          abre o painel: janelas do plano, contexto em tokens, os últimos 20 turnos',
       '/limits hide     oculta a banda acima do prompt, também nas próximas sessões',
       '/limits show     traz a banda de volta',
+      '/limits off | on  desliga em todas as conversas | liga',
       '/limits keep-warm on|off  mantém o cache quente (gasta plano; pergunta antes)',
       '/limits warn N   avisa na troca cara com a janela de 5h a partir de N% (padrão 70)',
     ].join('\n'),
@@ -162,7 +163,7 @@ export const WORDS: Record<Lang, Words> = {
     breakdownNote: '≈ estimativa local do engine, os mesmos números do /context',
   },
   en: {
-    description: 'Plan limits, cache clock and context: /limits opens the pane; hide, show, keep-warm, warn, help',
+    description: 'Plan limits, cache clock and context: /limits opens the pane; on, off, hide, show, keep-warm, warn, help',
     pane: 'Limits & context',
     hint: 'Figures the engine reports after each turn. Tokens and percent, never money.',
     labels: { five_hour: '5h', seven_day: 'wk', spend_limit: 'spend' },
@@ -192,6 +193,7 @@ export const WORDS: Record<Lang, Words> = {
       '/limits          open the pane: plan windows, context in tokens, the last 20 turns',
       '/limits hide     hide the band above the prompt, in later sessions too',
       '/limits show     bring the band back',
+      '/limits off | on  turn it off in every conversation | on',
       '/limits keep-warm on|off  keep the cache warm (spends plan; asks first)',
       '/limits warn N   warn on a costly switch with the 5-hour window from N% (default 70)',
     ].join('\n'),

@@ -110,13 +110,13 @@ describe('status', () => {
   })
 
   test('progress toward the offer, capped at the threshold', async () => {
-    expect(progress(0)).toBe('○○○○○ 0/5')
-    expect(progress(3)).toBe('●●●○○ 3/5')
-    expect(progress(9)).toBe('●●●●● 5/5')
+    expect(progress(0)).toBe('░░░░░ 0/5')
+    expect(progress(3)).toBe('███░░ 3/5')
+    expect(progress(9)).toBe('█████ 5/5')
   })
 
   test('the dialog line in Portuguese', async () => {
-    expect(noticeFor(entry({ approved: 4 }), NONE, 'pt-BR')).toBe('allowlist-coach: ●●●●○ 4/5 aprovações · falta 1 para /allowlist oferecer Bash(./mvnw test:*)')
+    expect(noticeFor(entry({ approved: 4 }), NONE, 'pt-BR')).toBe('allowlist-coach: ████░ 4/5 aprovações · falta 1 para /allowlist oferecer Bash(./mvnw test:*)')
     expect(noticeFor(entry({ rules: ['Bash(rm:*)'], approved: 1 }), NONE, 'pt-BR')).toContain('ampla demais')
   })
 
@@ -210,13 +210,13 @@ describe('stage 2', () => {
   test('the threshold option, kept between 2 and 20', async () => {
     setThreshold(3)
     expect(status(entry({ approved: 3 }), NONE)).toBe('ready')
-    expect(progress(1)).toBe('●○○ 1/3')
+    expect(progress(1)).toBe('█░░ 1/3')
     setThreshold(1)
-    expect(progress(0)).toBe('○○ 0/2')
+    expect(progress(0)).toBe('░░ 0/2')
     setThreshold(99)
-    expect(progress(20)).toBe(`${'●'.repeat(20)} 20/20`)
+    expect(progress(20)).toBe(`${'█'.repeat(20)} 20/20`)
     setThreshold('nope')
-    expect(progress(5)).toBe('●●●●● 5/5')
+    expect(progress(5)).toBe('█████ 5/5')
     setThreshold(undefined)
     expect(status(entry({ approved: THRESHOLD - 1 }), NONE)).toBe('counting')
   })

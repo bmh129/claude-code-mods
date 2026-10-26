@@ -53,12 +53,15 @@ import {
 import type { SortBy } from './watch'
 import { PHRASES, phraseOf } from './phrases'
 import type { IconStyle, Lang, Verb } from './ui'
-import { clip, elapsed, fig, fillArgs, glyph, langOf, lbl, figLead, linesOf, shortModel, styleOf, tokens, verbRow, windowOf } from './ui'
+import { BAR_EMPTY, BAR_FULL, PRIMARY, SECONDARY, clip, elapsed, fig, fillArgs, glyph, langOf, lbl, figLead, linesOf, shortModel, styleOf, tokens, verbRow, windowOf } from './ui'
+import { switchOf, switchWords } from './switch'
+import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
 
 const PANE = 'agent-watch'
 const POLL_MS = 5000
 const DEMO = 'demo-'
+const KEY_HIDDEN = 'hidden'
 
 const agents = atom({ plugin: 'agent-watch', key: 'agents' } as const, [] as Agent[])
 const orphans = atom({ plugin: 'agent-watch', key: 'orphans' } as const, {} as Record<string, Tokens>)
@@ -82,6 +85,12 @@ let lastStart = 0
 
 let shownStatus: string | undefined
 let stallMs = 5 * 60_000
+/** The `enabled` option; off, only the command answers. */
+let isOn = true
+/** On but silent: no toast and no status line. The pane still opens. Kept in the store. */
+let isHidden = false
+/** The `quiet` option, set in every mod by `/pad quiet`: hides what the mod draws by itself, as hide does. `show` does not undo it. */
+let isQuiet = false
 // Set by register from the options, and by session.start from the system's LANG and terminal.
 let lang: Lang = 'en'
 let style: IconStyle = 'emoji'
@@ -118,7 +127,7 @@ const refresh = async ($: EngineInterface) => {
     return checked.agents
   })
   if (left !== known) await update($, orphans, () => left)
-  for (const a of raised) $.ui.toast(w.stalledToast(nameOf(a), stallText(a, now, lang)), { timeoutMs: 10_000 })
+  for (const a of raised) if (!isHidden && !isQuiet) $.ui.toast(w.stalledToast(nameOf(a), stallText(a, now, lang)), { timeoutMs: 10_000 })
 
   const list = await read($, agents)
   const active = list.filter(a => isActive(a.status) && !a.id.startsWith(DEMO)).length
@@ -140,13 +149,13 @@ const refresh = async ($: EngineInterface) => {
     const run = wave && { ...wave, windowUsed: used }
     if (run) {
       await update($, lastRun, () => run)
-      $.ui.toast(w.doneToast(runText(run, lang)), { timeoutMs: 10_000 })
+      if (!isHidden && !isQuiet) $.ui.toast(w.doneToast(runText(run, lang)), { timeoutMs: 10_000 })
     }
   }
 
   const running = list.filter(a => isActive(a.status))
   const stalled = running.filter(a => a.isStalled).length
-  const text = running.length ? w.statusLine(running.length, tokens(running.reduce((n, a) => n + total(a.tokens), 0)), stalled, warn()) : undefined
+  const text = running.length && !isHidden && !isQuiet ? w.statusLine(running.length, tokens(running.reduce((n, a) => n + total(a.tokens), 0)), stalled, warn()) : undefined
   if (text !== shownStatus) {
     shownStatus = text
     $.ui.status(text)
@@ -182,9 +191,33 @@ const runDemo = async ($: EngineInterface) => {
   await refresh($)
 }
 
+/** Changes the mod's `enabled` option as /config would; the engine reloads the mod with it. */
+const setEnabled = async ($: EngineInterface, value: boolean): Promise<string | null> => {
+  const result = await $.config.set({ key: 'agent-watch.enabled', value } as never)
+  return result && 'deny' in result && result.deny !== undefined ? String(result.deny) : null
+}
+
+/** /watch on|off|hide|show: off is the option, in every conversation; hide is a stored flag. */
+const runSwitch = async ($: EngineInterface, choice: Switch): Promise<{ text?: string }> => {
+  const s = switchWords(lang, COMMAND)
+  if (choice === 'on' || choice === 'off') {
+    const want = choice === 'on'
+    if (want === isOn) return { text: want ? s.alreadyOn : s.alreadyOff }
+    const deny = await setEnabled($, want)
+    return { text: deny ? s.denied(deny) : want ? s.on : s.off }
+  }
+  isHidden = choice === 'hide'
+  await $.store.set(KEY_HIDDEN, isHidden)
+  if (isHidden) $.ui.status(undefined)
+  else quietly($)
+  return { text: isHidden ? s.hidden : s.shown }
+}
+
 /** /watch and its arguments: what the command answers, and what the pane's verbs run. */
 const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: string }> => {
   const w = WORDS[lang]
+  const choice = switchOf(args)
+  if (choice) return runSwitch($, choice)
   switch (args.trim().toLowerCase().replace(/\s+/g, ' ')) {
     case 'clear':
       await clear($, 'both')
@@ -237,6 +270,8 @@ const pressVerb = async ($: EngineInterface, v: Verb) => {
 
 export const register: Register = (on, options) => {
   stallMs = Math.max(1, Number(options.stallMinutes) || 5) * 60_000
+  isOn = options.enabled !== false
+  isQuiet = options.quiet === true
   lang = langOf(options.language)
   style = styleOf(options.icons)
 
@@ -247,12 +282,18 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: COMMAND,
       description: WORDS[lang].description,
-      argumentHint: '[clear [done|demo]|demo|help]',
+      argumentHint: '[on|off|hide|show|clear [done|demo]|demo|help]',
       immediate: true,
     })
-    $.clock.every(POLL_MS, () => quietly($))
+    isHidden = (await $.store.get(KEY_HIDDEN).catch(() => undefined)) === true
+    if (isOn) $.clock.every(POLL_MS, () => quietly($))
     return result
   })
+
+  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
+
+  // Off: only the command above answers, so `/watch on` can bring the rest back.
+  if (!isOn) return
 
   on('agent.spawn', async ($, e, next) => {
     const result = await next(e)
@@ -323,8 +364,6 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
-
   // The wheel over the pane moves the agent list.
   on('ui.scroll', { component: 'Pane', requestId: PANE }, async ($, e) => {
     await update($, offset, o => Math.max(0, Math.min(lastStart, o + e.by)))
@@ -394,14 +433,14 @@ export const register: Register = (on, options) => {
             <Text>
               {parts.map(p => (
                 <Text key={`share:${p.agent?.id ?? 'rest'}`} color={colorOf(p.agent)} dimColor={p.agent === null}>
-                  {(p.agent === null ? '░' : '█').repeat(p.cells)}
+                  {(p.agent === null ? BAR_EMPTY : BAR_FULL).repeat(p.cells)}
                 </Text>
               ))}
             </Text>
             <Box flexDirection="row" flexWrap="wrap" gap={2}>
               {parts.map(p => (
                 <Text key={`legend:${p.agent?.id ?? 'rest'}`}>
-                  <Text color={colorOf(p.agent)} dimColor={p.agent === null}>{p.agent === null ? '░ ' : '█ '}</Text>
+                  <Text color={colorOf(p.agent)} dimColor={p.agent === null}>{`${p.agent === null ? BAR_EMPTY : BAR_FULL} `}</Text>
                   <Text dimColor>{`${clip(p.agent ? nameOf(p.agent) : w.others, 20)} ${Math.round((p.tokens / sum) * 100)}%`}</Text>
                 </Text>
               ))}
@@ -416,7 +455,7 @@ export const register: Register = (on, options) => {
               <Text dimColor>{`  ${w.leadLine(tokens(total(spentLead)), tokens(spentLead.output))}`}</Text>
             </Text>
             {rows.length > 1 && (
-              <Button key="sort" plain dimColor label={`⇅ ${order === 'start' ? w.sortStart : w.sortTokens}`} onPress={() => update($, sortBy, x => (x === 'start' ? 'tokens' : 'start'))} />
+              <Button key="sort" {...SECONDARY} label={`⇅ ${order === 'start' ? w.sortStart : w.sortTokens}`} onPress={() => update($, sortBy, x => (x === 'start' ? 'tokens' : 'start'))} />
             )}
           </Box>
           {list.length === 0 && <Text dimColor>{`  ${w.empty} ${w.emptyNext}`}</Text>}
@@ -436,7 +475,7 @@ export const register: Register = (on, options) => {
                   {colorOf(a) && <Text color={colorOf(a)}>{'  ■'}</Text>}
                   {a.id.startsWith(DEMO) && <Text color="warning">{`  ${w.demoBadge}`}</Text>}
                   {isStuck && <Text>{'  '}</Text>}
-                  {isStuck && <Button key={`investigate:${a.id}`} plain color="warning" label={w.investigate} onPress={() => investigate(a)} />}
+                  {isStuck && <Button key={`investigate:${a.id}`} {...PRIMARY} label={w.investigate} onPress={() => investigate(a)} />}
                 </Box>
                 <Text>
                   <Text dimColor>{`${rail}   `}</Text>
@@ -479,7 +518,7 @@ export const register: Register = (on, options) => {
             <Box flexDirection="row" gap={2}>
               <Text color="success">{'  ✓'}</Text>
               <Button key="done" plain label={w.finished(done, isOpen)} onPress={() => update($, showDone, x => !x)} />
-              <Button key="clear-done" plain dimColor label={w.clearDone} onPress={() => clear($, 'done')} />
+              <Button key="clear-done" {...SECONDARY} label={w.clearDone} onPress={() => clear($, 'done')} />
             </Box>
           )}
           {total(other) > 0 && <Text dimColor>{`  ${w.otherLoops(tokens(total(other)))}`}</Text>}
@@ -494,8 +533,8 @@ export const register: Register = (on, options) => {
 
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
           {verbRow({ Box, Text, Button }, COMMAND, VERBS, v => pressVerb($, v))}
-          {hasDemo && <Button key="clear-demo" plain dimColor label={w.clearDemo} onPress={() => clear($, 'demo')} />}
-          <Button key="close" role="dismiss" label={w.close} onPress={() => $.ui.close({ id: PANE })} />
+          {hasDemo && <Button key="clear-demo" {...SECONDARY} label={w.clearDemo} onPress={() => clear($, 'demo')} />}
+          <Button key="close" role="dismiss" {...SECONDARY} label={w.close} onPress={() => $.ui.close({ id: PANE })} />
         </Box>
       </Box>
     )

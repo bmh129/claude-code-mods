@@ -5,7 +5,7 @@
 //             is not the person); classic.PostToolUse(Failure) marks the ones that ran. When
 //             the call resolves, an asked call that ran is an approval, one that did not, a
 //             refusal. Counts live in $.store per project root, across sessions.
-//   dialog    a line under the open dialog: approvals so far, `●●●○○ 3/5`, toward the offer.
+//   dialog    a line under the open dialog: approvals so far, `███░░ 3/5`, toward the offer.
 //   toast     once, when a rule reaches `threshold` approvals (5 by default) with no refusal.
 //   /allowlist  pane with every rule, numbered, ready ones first, each with the last call that
 //             asked and when, and its actions: allow, dismiss, reset count, remove from allow.
@@ -50,7 +50,9 @@ import {
   zero,
 } from './tally'
 import type { Lang, Verb } from './ui'
-import { clip, fig, fillArgs, langOf, linesOf, verbRow, windowOf } from './ui'
+import { PRIMARY, SECONDARY, clip, fig, fillArgs, langOf, linesOf, verbRow, windowOf } from './ui'
+import { switchOf, switchWords } from './switch'
+import type { Switch } from './switch'
 import { COMMAND, WORDS } from './words'
 
 const PANE = 'allowlist'
@@ -66,6 +68,13 @@ const filter = atom({ plugin: 'allowlist-coach', key: 'filter' } as const, '')
 type Open = { tool: string; input: string; agentId?: string; rules: string[] | null; ran: boolean; example: string }
 const open = new Map<string, Open>()
 let root = ''
+/** The `enabled` option; off, only the command answers. */
+let isOn = true
+/** On but silent: it counts, but offers no toast and writes no note in the dialog. Kept in the store. */
+let isHidden = false
+/** The `quiet` option, set in every mod by `/pad quiet`: hides what the mod draws by itself, as hide does. `show` does not undo it. */
+let isQuiet = false
+const KEY_HIDDEN = 'hidden'
 // The last first row the list can start at, from the last render: the wheel stops there.
 let lastStart = 0
 // Set by register from the options, and by session.start from the system's LANG.
@@ -209,9 +218,31 @@ const reset = async ($: EngineInterface) => {
   return w.cleared
 }
 
+/** Changes the mod's `enabled` option as /config would; the engine reloads the mod with it. */
+const setEnabled = async ($: EngineInterface, value: boolean): Promise<string | null> => {
+  const result = await $.config.set({ key: 'allowlist-coach.enabled', value } as never)
+  return result && 'deny' in result && result.deny !== undefined ? String(result.deny) : null
+}
+
+/** /allowlist on|off|hide|show: off is the option, in every conversation; hide is a stored flag. */
+const runSwitch = async ($: EngineInterface, choice: Switch): Promise<{ text?: string }> => {
+  const s = switchWords(lang, COMMAND)
+  if (choice === 'on' || choice === 'off') {
+    const want = choice === 'on'
+    if (want === isOn) return { text: want ? s.alreadyOn : s.alreadyOff }
+    const deny = await setEnabled($, want)
+    return { text: deny ? s.denied(deny) : want ? s.on : s.off }
+  }
+  isHidden = choice === 'hide'
+  await $.store.set(KEY_HIDDEN, isHidden)
+  return { text: isHidden ? s.hidden : s.shown }
+}
+
 /** /allowlist and its arguments: what the command answers, and what the pane's verbs run. */
 const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: string }> => {
   const w = WORDS[lang]
+  const choice = switchOf(args)
+  if (choice) return runSwitch($, choice)
   const [verb = '', ...rest] = args.trim().split(/\s+/)
   const arg = rest.join(' ')
   const key = async () => keyAt(await read($, entries), await read($, configured), arg)
@@ -270,6 +301,8 @@ const pressVerb = async ($: EngineInterface, v: Verb) => {
 export const register: Register = (on, options) => {
   lang = langOf(options.language)
   setThreshold(options.threshold)
+  isOn = options.enabled !== false
+  isQuiet = options.quiet === true
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -277,15 +310,22 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: COMMAND,
       description: WORDS[lang].description,
-      argumentHint: '[allow <n>|dismiss <n>|remove <n>|reset [<n>]|help]',
+      argumentHint: '[on|off|hide|show|allow <n>|dismiss <n>|remove <n>|reset [<n>]|help]',
       immediate: true,
     })
+    isHidden = (await $.store.get(KEY_HIDDEN).catch(() => undefined)) === true
+    if (!isOn) return result
     root = await $.session.root()
     const stored = (await $.store.get(storeKey())) as Record<string, Entry> | undefined
     await update($, entries, () => stored ?? {})
     await refresh($)
     return result
   })
+
+  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
+
+  // Off: only the command above answers, so `/allowlist on` can bring the rest back.
+  if (!isOn) return
 
   on('tool.call', async ($, e, next) => {
     const id = e.tool_use_id
@@ -311,7 +351,7 @@ export const register: Register = (on, options) => {
     const entry = (await read($, entries))[key]!
     if (before !== 'ready' && entry.state === 'counting' && status(entry, await read($, configured)) === 'ready') {
       await save($, list => setState(list, key, 'offered'))
-      $.ui.toast(WORDS[lang].offered(key, entry.approved), { timeoutMs: 10000 })
+      if (!isHidden && !isQuiet) $.ui.toast(WORDS[lang].offered(key, entry.approved), { timeoutMs: 10000 })
     }
     return result
   }).catch(($, e, next) => next(e))
@@ -328,7 +368,7 @@ export const register: Register = (on, options) => {
       if (holdsSecret(call.input) || rules.some(holdsSecret)) break
       call.rules = rules
       const text = noticeFor((await read($, entries))[keyOf(call.rules)], await read($, configured), lang)
-      if (text) {
+      if (text && !isHidden && !isQuiet) {
         try {
           $.ui.notice(id, text)
         } catch {
@@ -351,8 +391,6 @@ export const register: Register = (on, options) => {
     if (call) call.ran = true
     return next(e)
   }).catch(($, e, next) => next(e))
-
-  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
 
   // The wheel over the pane moves the list.
   on('ui.scroll', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -437,13 +475,13 @@ export const register: Register = (on, options) => {
                     )}
                     <Text wrap="truncate-end">{r.key}</Text>
                     {risk && <Text color="warning" wrap="truncate-end">{`(${w.risk(risk)})`}</Text>}
-                    {r.status === 'ready' && <Button key={`allow-${r.n}`} label={w.allow} onPress={() => toast(allow($, r.key))} />}
+                    {r.status === 'ready' && <Button key={`allow-${r.n}`} label={w.allow} {...PRIMARY} onPress={() => toast(allow($, r.key))} />}
                   </Box>
                   <Box flexDirection="row" gap={2}>
                     <Text dimColor wrap="truncate-end">{`   ${clip(w.example(r.entry.example, w.ago(now - r.entry.lastAt)), Math.max(20, width - 44))}`}</Text>
-                    {canDismiss && <Button key={`dismiss-${r.n}`} label={w.dismiss} plain dimColor onPress={() => toast(dismiss($, r.key))} />}
-                    {hasCounts && <Button key={`zero-${r.n}`} label={w.resetCount} plain dimColor onPress={() => toast(zeroOne($, r.key))} />}
-                    {r.entry.state === 'added' && <Button key={`remove-${r.n}`} label={w.remove} plain dimColor onPress={() => toast(remove($, r.key))} />}
+                    {canDismiss && <Button key={`dismiss-${r.n}`} label={w.dismiss} {...SECONDARY} onPress={() => toast(dismiss($, r.key))} />}
+                    {hasCounts && <Button key={`zero-${r.n}`} label={w.resetCount} {...SECONDARY} onPress={() => toast(zeroOne($, r.key))} />}
+                    {r.entry.state === 'added' && <Button key={`remove-${r.n}`} label={w.remove} {...SECONDARY} onPress={() => toast(remove($, r.key))} />}
                   </Box>
                 </Box>
               )
@@ -459,7 +497,7 @@ export const register: Register = (on, options) => {
         )}
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
           {verbRow({ Box, Text, Button }, COMMAND, verbs(lang), v => pressVerb($, v))}
-          <Button key="close" role="dismiss" label={w.close} onPress={() => $.ui.close({ id: PANE })} />
+          <Button key="close" role="dismiss" {...SECONDARY} label={w.close} onPress={() => $.ui.close({ id: PANE })} />
         </Box>
       </Box>
     )

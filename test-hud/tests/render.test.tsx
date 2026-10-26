@@ -6,6 +6,11 @@ const flat = (n: unknown): string =>
   typeof n === 'string' ? n : Array.isArray(n) ? n.map(flat).join('') : n && typeof n === 'object' ? flat((n as { children?: unknown }).children) : ''
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
+
+// A5 (prototype buttons-quiet-a5-a7, variant B): the Buttons of a tree, with the props the variant lives in.
+const buttonsOf = (tree: unknown) =>
+  [...JSON.stringify(tree).matchAll(/"type":"Button","props":(\{[^{}]*\})/g)].map(m => JSON.parse(m[1]!) as { key: string; variant?: string; plain?: boolean })
+const variantOf = (tree: unknown, key: string) => buttonsOf(tree).find(b => b.key === key)?.variant
 const PROPS = { title: 'Tests', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} }
 const RUN = { command: 'test-hud', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } }
 const CMD = 'npx vitest run --reporter=verbose src/a.test.ts src/b.test.ts src/c.test.ts src/d.test.ts'
@@ -79,6 +84,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     drawn = JSON.stringify(await pane.drawn())
     expect(flat(JSON.parse(drawn))).toContain('43/43 passing')
     expect(drawn).not.toContain('Failing')
+    expect(variantOf(JSON.parse(drawn), 'rerun')).toBe('secondary') // green: nothing to decide
+    expect(variantOf(JSON.parse(drawn), 'close')).toBe('secondary')
     expect(drawn).toContain('Fixed since the previous run (2)')
     await pane.unmount()
   })
@@ -89,6 +96,11 @@ test('a failing test and run again fill the prompt with the whole command; nothi
   await start($)
   await vitest($, 'tu1')
   const pane = await mount($)
+  const red = await pane.drawn()
+  expect(variantOf(red, 'rerun')).toBe('primary') // red: run again is the decision
+  expect(buttonsOf(red).filter(b => b.variant === 'primary')).toHaveLength(1)
+  expect(variantOf(red, 'close')).toBe('secondary')
+  for (const b of buttonsOf(red).filter(b => b.variant)) expect(b.plain).toBeUndefined()
   await pane.press({ key: 'fix:src/a.test.ts > parse > empty' })
   expect(w.fills.at(-1)?.text).toBe(`Investigate and fix the failure in src/a.test.ts > parse > empty. Command: ${CMD}`)
   await pane.press({ key: 'rerun' })
@@ -107,7 +119,7 @@ test('the verbs: clear waits in the prompt, help answers in the transcript, clos
   expect(flat(await pane.drawn())).toContain('41/43 passing')
   await pane.press({ key: 'verb:help' })
   expect(w.logs[0]).toBe('/test-hud          open the pane')
-  expect(w.logs).toHaveLength(3)
+  expect(w.logs).toHaveLength(6)
   await pane.press({ key: 'close' })
   expect(w.closed).toEqual(['test-hud'])
   await pane.unmount()
@@ -279,4 +291,73 @@ test('a saved copy named in the output is read only from tool-results under the 
   await vitest($, 'tu2')
   expect(read).toEqual(['/home/u/.claude/projects/p/s/tool-results/b1.txt'])
   expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+})
+
+// /test-hud on, off, hide and show
+
+test('hide: the status line and the green toast go quiet, the run is still counted; show brings them back', async ($, on) => {
+  const { w } = world(on)
+  await start($)
+  await vitest($, 'tu1')
+  expect(w.statuses.at(-1)).toBe('✗ tests 41/43')
+  expect((await $.command.run({ ...RUN, args: 'hide' } as never)).text).toBe('test-hud hidden but on · /test-hud show brings it back')
+  expect(w.statuses.at(-1)).toBeUndefined()
+  w.output = GREEN
+  await vitest($, 'tu2')
+  expect(w.statuses.at(-1)).toBeUndefined()
+  expect(w.toasts).toEqual([])
+  expect((await $.command.run({ ...RUN, args: 'show' } as never)).text).toBe('test-hud shown · /test-hud hide hides it')
+  expect(w.statuses.at(-1)).toBe('✓ tests 43/43 █▁')
+})
+
+test('hide is kept for the next session', async ($, on) => {
+  const { w } = world(on)
+  await start($)
+  await $.command.run({ ...RUN, args: 'hide' } as never)
+  await start($)
+  await vitest($, 'tu1')
+  expect(w.statuses.filter(s => s !== undefined)).toEqual([])
+})
+
+test('on and off write the enabled option', async ($, on) => {
+  world(on)
+  const sets: { key: string; value: unknown }[] = []
+  on('config.set', (_$: any, e: any) => (sets.push({ key: e.key, value: e.value }), { value: e.value }) as never)
+  await start($)
+  expect((await $.command.run({ ...RUN, args: 'on' } as never)).text).toBe('test-hud is already on.')
+  expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('test-hud off in every conversation · /test-hud on turns it on')
+  expect(sets).toEqual([{ key: 'test-hud.enabled', value: false }])
+})
+
+test('off: runs are not counted and the status line stays empty, but the command still answers', { options: { enabled: false } }, async ($, on) => {
+  const { w } = world(on)
+  on('config.set', (_$: any, e: any) => ({ value: e.value }) as never)
+  await start($)
+  await vitest($, 'tu1')
+  expect(w.statuses).toEqual([])
+  expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('test-hud is already off.')
+  expect((await $.command.run({ ...RUN, args: 'on' } as never)).text).toBe('test-hud on · /test-hud off turns it off')
+})
+
+test('a refused option says why', async ($, on) => {
+  world(on)
+  on('config.set', () => ({ deny: 'managed by policy' }) as never)
+  await start($)
+  expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('Could not change the option: managed by policy')
+})
+
+// The quiet option, set in every mod by /pad quiet: silent like hide, and `show` does not undo it.
+test('quiet: no status line and no toast, the run is still counted, and show does not undo it', { options: { quiet: true } }, async ($, on) => {
+  const { w } = world(on)
+  await start($)
+  await vitest($, 'tu1')
+  expect(w.statuses.at(-1)).toBeUndefined()
+  w.output = GREEN
+  await vitest($, 'tu2')
+  expect(w.toasts).toEqual([])
+  await $.command.run({ ...RUN, args: 'show' } as never)
+  expect(w.statuses.at(-1)).toBeUndefined()
+  const pane = await mount($)
+  expect(flat(JSON.parse(JSON.stringify(await pane.drawn())))).toContain('43/43')
+  await pane.unmount()
 })

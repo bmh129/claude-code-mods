@@ -4,6 +4,10 @@ Plan limits and context above the prompt, in tokens and percent. Never money.
 
 ![limits-meter: band above the prompt, the /limits pane and its toasts](../screenshots/limits-meter.svg)
 
+The cache clock and keep warm ([mp4](../screenshots/limits-meter-cache.mp4)):
+
+![limits-meter: the cache countdown, the context bar by group, the /limits pane and keep warm](../screenshots/limits-meter-cache.gif)
+
 - **Band above the prompt:** the main thread's model, in the accent color, and its effort as a
   five-step gauge, `opus 5.5 ▰▰▰▱▱ high` (low to max, `max` in the warning color),
   the 5-hour and weekly plan windows with their reset times, the context window's fill, and
@@ -66,6 +70,7 @@ Plan limits and context above the prompt, in tokens and percent. Never money.
 /limits show     bring the band back
 /limits keep-warm on|off  keep the cache warm: asks first, spends plan
 /limits warn N   warn on a costly switch with the 5-hour window from N%, 1 to 100 (default 70)
+/limits off | on  turn the mod off or on in every conversation
 /limits help     list the commands
 ```
 
@@ -75,6 +80,7 @@ Set them in `/config`, under the plugin.
 
 | Option | Values | Default |
 | --- | --- | --- |
+| `enabled` | `true` or `false`. Off keeps only the `/limits` command, which turns the mod back on; `/limits on` and `off` change it too | `true` |
 | `icons` | `auto`, `emoji`, `symbol`. `symbol` draws the cache glyphs in one cell (`◷ * ↺`); `auto` uses it in a JetBrains terminal | `auto` |
 | `language` | `auto`, `pt-BR`, `en`. `auto` follows the system's `LANG`: Portuguese for `pt_*`, English otherwise | `auto` |
 | `format` | `full` draws the band with bars; `compact` one line of numbers: model · effort · ctx · 5h · wk | `full` |

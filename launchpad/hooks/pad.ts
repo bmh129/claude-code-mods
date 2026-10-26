@@ -26,6 +26,18 @@ type Words = {
   off: string
   on: string
   isOff: string
+  /** /pad quiet: every mod of the collection draws nothing by itself, and a chip on the hint line brings it back. */
+  quiet: {
+    on: (n: number) => string
+    off: (n: number) => string
+    already: (isOn: boolean) => string
+    none: string
+    old: (names: string) => string
+    denied: (why: string) => string
+    chip: string
+    chipBack: string
+    stillQuiet: string
+  }
   added: (n: number, label: string) => string
   removed: (label: string) => string
   reset: string
@@ -80,6 +92,23 @@ type Words = {
     shortcuts: string
     close: string
   }
+  /** The panel's Mods tab: a row per mod with its eye and its toggle, the quiet row and the rules. */
+  switchboard: {
+    tabs: { mods: string; shortcuts: string }
+    /** What each mod of the collection does, one line, by plugin name. */
+    mods: Record<string, string>
+    on: string
+    off: string
+    /** The line under a row: what its command does, or how to undo the state it is in. */
+    opens: (command: string) => string
+    hiddenNote: (command: string) => string
+    offNote: (command: string) => string
+    quietTitle: string
+    quietNote: string
+    rules: string[]
+  }
+  /** The label of each /pad argument on the row under the menu: the command it runs stays in English. */
+  verbs: Record<string, string>
   /** The Mods section of /pad configuration. */
   modsSection: {
     title: string
@@ -126,9 +155,20 @@ export const WORDS: Record<Lang, Words> = {
     origins: { default: 'padrão', user: 'seu', project: 'projeto' },
     shown: 'Menu de atalhos do launchpad.',
     empty: 'Nenhum atalho disponível. /pad configuration escolhe os do menu.',
-    off: 'Launchpad desligado: o menu não aparece mais ao abrir a sessão nem com /pad. /pad on liga de novo.',
-    on: 'Launchpad ligado: o menu aparece ao abrir a sessão, depois do /clear e com /pad.',
-    isOff: 'O launchpad está desligado. /pad on liga de novo.',
+    off: 'Launchpad oculto: o menu não aparece mais ao abrir a sessão nem com /pad. /pad show mostra de novo.',
+    on: 'Launchpad visível: o menu aparece ao abrir a sessão, depois do /clear e com /pad.',
+    isOff: 'O launchpad está oculto. /pad show mostra de novo.',
+    quiet: {
+      on: n => `discreto ligado em ${n} mods: nada aparece sozinho · /pad quiet off volta`,
+      off: n => `discreto desligado em ${n} mods · /pad quiet on liga`,
+      already: isOn => (isOn ? 'discreto já está ligado.' : 'discreto já está desligado.'),
+      none: 'Nenhum mod com a opção quiet. Atualize os mods da coleção.',
+      old: names => `Sem a opção quiet (atualize): ${names}.`,
+      denied: why => `Não deu para mudar a opção: ${why}`,
+      chip: '◦ discreto',
+      chipBack: 'mostrar',
+      stillQuiet: 'O launchpad está discreto. /pad quiet off mostra de novo.',
+    },
     added: (n, label) => `Atalho ${n} criado: ${label}.`,
     removed: label => `Atalho removido: ${label}.`,
     reset: 'Atalhos de volta aos padrões.',
@@ -143,7 +183,9 @@ export const WORDS: Record<Lang, Words> = {
       '/pad add Nome | @agente       um atalho que chama um agente',
       '/pad remove 3          tira o atalho 3',
       '/pad reset             volta aos atalhos padrão',
-      '/pad off | on          desliga ou liga o menu',
+      '/pad hide | show       esconde ou mostra o menu, com o launchpad ligado',
+      '/pad off | on          desliga ou liga o launchpad em todas as conversas',
+      '/pad quiet on | off    modo discreto: nenhum mod desenha nada sozinho (sem on ou off, alterna)',
       '/pad place header      o menu como cartão sob o cabeçalho (padrão)',
       '/pad place prompt      o menu numa linha logo acima do prompt, sempre à mão',
       '/pad place pane        o menu num painel, uma aba como as de /limits e /watch',
@@ -207,6 +249,24 @@ export const WORDS: Record<Lang, Words> = {
       shortcuts: 'Atalhos',
       close: 'Fechar',
     },
+    switchboard: {
+      tabs: { mods: 'Mods', shortcuts: 'Atalhos' },
+      mods: {
+        'limits-meter': 'Relógio do cache, limites de 5h e da semana, contexto',
+        'allowlist-coach': 'Sugere regras para o que você sempre aprova',
+        'agent-watch': 'Um cartão por subagente, com progresso',
+        'plain-view': 'Recolhe o ruído das ferramentas num resumo',
+      },
+      on: '● on',
+      off: '○ off',
+      opens: command => `/${command} abre · hide oculta`,
+      hiddenNote: command => `/${command} show mostra`,
+      offNote: command => `/${command} on liga`,
+      quietTitle: '◦ discreto',
+      quietNote: 'Nenhum mod desenha nada sozinho. Erro, permissão e pergunta continuam.',
+      rules: ['Desligado vale em toda conversa. Oculto mantém ligado, fora de vista.', 'Mod novo da coleção aparece aqui sozinho.'],
+    },
+    verbs: { configuration: 'configurar', list: 'listar', add: 'adicionar', remove: 'remover', reset: 'restaurar', place: 'posição', hide: 'ocultar', show: 'mostrar', help: 'ajuda' },
     modsSection: {
       title: 'Mods',
       missing: 'Faltam (o comando vai para o prompt; Enter instala):',
@@ -250,9 +310,20 @@ export const WORDS: Record<Lang, Words> = {
     origins: { default: 'default', user: 'yours', project: 'project' },
     shown: 'Launchpad shortcuts menu.',
     empty: 'No shortcuts available. /pad configuration picks the menu.',
-    off: 'Launchpad off: the menu no longer shows when a session starts or on /pad. /pad on turns it back on.',
-    on: 'Launchpad on: the menu shows when a session starts, after /clear and on /pad.',
-    isOff: 'The launchpad is off. /pad on turns it back on.',
+    off: 'Launchpad hidden: the menu no longer shows when a session starts or on /pad. /pad show brings it back.',
+    on: 'Launchpad shown: the menu shows when a session starts, after /clear and on /pad.',
+    isOff: 'The launchpad is hidden. /pad show brings it back.',
+    quiet: {
+      on: n => `quiet on in ${n} mods: nothing appears by itself · /pad quiet off brings it back`,
+      off: n => `quiet off in ${n} mods · /pad quiet on turns it on`,
+      already: isOn => (isOn ? 'quiet is already on.' : 'quiet is already off.'),
+      none: 'No mod has the quiet option. Update the mods of the collection.',
+      old: names => `No quiet option (update): ${names}.`,
+      denied: why => `Could not change the option: ${why}`,
+      chip: '◦ quiet',
+      chipBack: 'show',
+      stillQuiet: 'The launchpad is quiet. /pad quiet off shows it again.',
+    },
     added: (n, label) => `Shortcut ${n} added: ${label}.`,
     removed: label => `Shortcut removed: ${label}.`,
     reset: 'Shortcuts back to the defaults.',
@@ -267,7 +338,9 @@ export const WORDS: Record<Lang, Words> = {
       '/pad add Name | @agent        a shortcut that calls an agent',
       '/pad remove 3          drop shortcut 3',
       '/pad reset             back to the default shortcuts',
-      '/pad off | on          turn the menu off or on',
+      '/pad hide | show       hide or show the menu, with the launchpad still on',
+      '/pad off | on          turn the launchpad off or on in every conversation',
+      '/pad quiet on | off    quiet mode: no mod draws anything by itself (bare, it toggles)',
       '/pad place header      the menu as a card under the header (the default)',
       '/pad place prompt      the menu in a row right above the prompt, always at hand',
       '/pad place pane        the menu in a pane, a tab like those of /limits and /watch',
@@ -331,6 +404,24 @@ export const WORDS: Record<Lang, Words> = {
       shortcuts: 'Shortcuts',
       close: 'Close',
     },
+    switchboard: {
+      tabs: { mods: 'Mods', shortcuts: 'Shortcuts' },
+      mods: {
+        'limits-meter': 'Cache clock, 5h and weekly limits, context',
+        'allowlist-coach': 'Suggests rules for what you keep approving',
+        'agent-watch': 'A card per subagent, with progress',
+        'plain-view': 'Folds tool noise into a short summary',
+      },
+      on: '● on',
+      off: '○ off',
+      opens: command => `/${command} opens · hide hides`,
+      hiddenNote: command => `/${command} show brings it back`,
+      offNote: command => `/${command} on turns it on`,
+      quietTitle: '◦ quiet',
+      quietNote: 'No mod draws anything by itself. Errors, permissions and questions stay.',
+      rules: ['Off means off in every chat. Hidden keeps it on but out of sight.', 'New mods of this collection appear here by themselves.'],
+    },
+    verbs: { configuration: 'configure', list: 'list', add: 'add', remove: 'remove', reset: 'reset', place: 'place', hide: 'hide', show: 'show', help: 'help' },
     modsSection: {
       title: 'Mods',
       missing: 'Missing (the command goes into the prompt; Enter installs):',
@@ -664,15 +755,31 @@ export const EXPENSIVE = ['opus', 'max']
 export const WARN_AT = 70
 
 /**
- * This collection's mods besides the launchpad: what the panel's Mods section looks for. test-hud
- * is left out on purpose: it is for developers, and it leaves this collection after plan v2.
+ * This collection's mods besides the launchpad: what the panel's Mods tab looks for. Every one has
+ * the `enabled` option since A1, so the panel toggles them all. test-hud is left out on purpose: it
+ * is for developers, and it leaves this collection after plan v2.
  */
 export const MODS: readonly ModInfo[] = [
-  { plugin: 'limits-meter', command: 'limits', toggles: false },
-  { plugin: 'allowlist-coach', command: 'allowlist', toggles: false },
-  { plugin: 'agent-watch', command: 'watch', toggles: false },
+  { plugin: 'limits-meter', command: 'limits', toggles: true },
+  { plugin: 'allowlist-coach', command: 'allowlist', toggles: true },
+  { plugin: 'agent-watch', command: 'watch', toggles: true },
   { plugin: 'plain-view', command: 'plain-view', toggles: true },
 ]
+
+/**
+ * The plugins `/pad quiet` sets the `quiet` option of: the collection's, test-hud and the launchpad
+ * itself, last, since its reload follows.
+ */
+export const QUIET_PLUGINS: readonly string[] = [...MODS.map(m => m.plugin), 'test-hud', 'launchpad']
+
+/** The `<plugin>.quiet` rows of the /config list, and the plugins that have options but no such row (an older version). */
+export const quietPlan = (rows: readonly { key: string }[]): { keys: string[]; old: string[] } => {
+  const has = (key: string) => rows.some(r => r.key === key)
+  return {
+    keys: QUIET_PLUGINS.filter(p => has(`${p}.quiet`)).map(p => `${p}.quiet`),
+    old: QUIET_PLUGINS.filter(p => has(`${p}.enabled`) && !has(`${p}.quiet`)),
+  }
+}
 
 /** The marketplace the collection installs from. */
 export const MARKETPLACE = 'ice-lfernandes/claude-code-mods'
@@ -725,6 +832,21 @@ export const toggleOf = (m: ModInfo, rows: readonly { key: string; value: unknow
   if (!m.toggles) return null
   const row = rows.find(r => r.key === `${m.plugin}.enabled`)
   return typeof row?.value === 'boolean' ? row.value : null
+}
+
+/** What a mod's row says: on, hidden (on, out of sight), off, or unknown (no `enabled` row: an older mod). */
+export type ModState = 'on' | 'hidden' | 'off' | 'unknown'
+
+/**
+ * A mod's state for its row. `off` comes from the mod's own `enabled` option. `hidden` is what the
+ * launchpad last set with the eye: another mod's hide flag is in its own store, which this one cannot
+ * read, so a `/x hide` typed by hand shows here only after the next press.
+ */
+export const modState = (m: ModInfo, rows: readonly { key: string; value: unknown }[], eyes: readonly string[]): ModState => {
+  const on = toggleOf(m, rows)
+  if (on === null) return 'unknown'
+  if (!on) return 'off'
+  return eyes.includes(m.plugin) ? 'hidden' : 'on'
 }
 
 /** A mod's button label: its command's icon and the plugin's name, the same in every language. */

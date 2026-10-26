@@ -68,7 +68,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 export const WORDS: Record<Lang, Words> = {
   'pt-BR': {
-    description: 'Subagentes: /watch abre o painel; clear [done|demo], demo, help',
+    description: 'Subagentes: /watch abre o painel; on, off, hide, show, clear [done|demo], demo, help',
     pane: 'Agentes',
     hint: 'Subagentes desta sessão: tokens de cada requisição ao modelo, e um toast quando um deles trava.',
     counts: (r, f, t) => `${r} rodando · ${plural(f, 'concluído', 'concluídos')} · ${t} tokens`,
@@ -123,11 +123,14 @@ export const WORDS: Record<Lang, Words> = {
       '/watch clear        remove os agentes concluídos e os de demo',
       '/watch clear done   remove só os concluídos',
       '/watch clear demo   remove só os de demo',
+      '/watch hide         segue ligado, sem toast nem linha de status; o painel abre',
+      '/watch show         traz de volta os avisos',
+      '/watch off | on     desliga em todas as conversas | liga',
     ].join('\n'),
     failedToRun: what => `Não deu para rodar: ${what}`,
   },
   en: {
-    description: 'Subagents: /watch opens the pane; clear [done|demo], demo, help',
+    description: 'Subagents: /watch opens the pane; on, off, hide, show, clear [done|demo], demo, help',
     pane: 'Agents',
     hint: "This session's subagents: tokens from each model request, and a toast when one stalls.",
     counts: (r, f, t) => `${r} running · ${f} finished · ${t} tokens`,
@@ -182,6 +185,9 @@ export const WORDS: Record<Lang, Words> = {
       '/watch clear        drop finished and demo agents',
       '/watch clear done   drop finished agents only',
       '/watch clear demo   drop demo agents only',
+      '/watch hide         stays on, with no toast or status line; the pane still opens',
+      '/watch show         bring the notices back',
+      '/watch off | on     turn it off in every conversation | on',
     ].join('\n'),
     failedToRun: what => `Could not run: ${what}`,
   },

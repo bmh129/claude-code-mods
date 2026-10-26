@@ -37,6 +37,12 @@ const BREAKDOWN = {
 const SWITCH = { from_model: 'claude-sonnet-5-5', to_model: 'claude-opus-5-5', requested_model: 'opus', source: 'command', context_tokens: 0, prompt_cache_warm: false, cache_ttl: '1h', estimated_cache_write_usd: 0, pricing: 'catalog' }
 const MIN = 60_000
 
+
+// A5 (prototype buttons-quiet-a5-a7, variant B): the Buttons of a tree, with the props the variant lives in.
+const buttonsOf = (tree: unknown) =>
+  [...JSON.stringify(tree).matchAll(/"type":"Button","props":(\{[^{}]*\})/g)].map(m => JSON.parse(m[1]!) as { key: string; variant?: string; plain?: boolean })
+const variantOf = (tree: unknown, key: string) => buttonsOf(tree).find(b => b.key === key)?.variant
+
 type World = {
   toasts: string[]
   fills: string[]
@@ -135,11 +141,19 @@ test('from 85% context the band and the pane offer compact, which only fills the
 
   const b = await band($)
   expect(JSON.stringify(await b.drawn())).toContain('compact')
+  const band5 = await b.drawn()
+  expect(variantOf(band5, 'compact')).toBe('primary')
+  expect(variantOf(band5, 'details')).toBe('secondary')
+  expect(variantOf(band5, 'hide')).toBe('secondary')
+  for (const x of buttonsOf(band5).filter(x => x.variant)) expect(x.plain).toBeUndefined()
   await b.press({ key: 'compact' })
   expect(world.fills).toEqual(['/compact [focus]'])
   await b.unmount()
 
   const p = await pane($)
+  const pane5 = await p.drawn()
+  expect(variantOf(pane5, 'compact')).toBe('primary')
+  expect(variantOf(pane5, 'close')).toBe('secondary')
   await p.press({ key: 'compact' })
   expect(world.fills).toEqual(['/compact [focus]', '/compact [focus]'])
   expect(world.logs).toEqual([])
@@ -176,7 +190,7 @@ test('the pane footer: hide and show run, help writes to the transcript, Close c
   const p = await pane($)
   await p.press({ key: 'verb:help' })
   expect(world.logs[0]).toContain('/limits          open the pane')
-  expect(world.logs).toHaveLength(5)
+  expect(world.logs).toHaveLength(6)
   await p.press({ key: 'verb:hide' })
   expect(world.logs.at(-1)).toBe('Band hidden. /limits show brings it back.')
   const b = await band($)
@@ -951,4 +965,48 @@ test('context groups: the pane lists every category, each MCP server and the fre
   expect(shown).toContain('free')
   expect(shown).toContain('≈ local engine estimate, the same figures as /context')
   await p.unmount()
+})
+
+// /limits on and off
+
+test('on and off write the enabled option; a refused one says why', async ($, on) => {
+  engine(on)
+  const sets: { key: string; value: unknown }[] = []
+  let deny = ''
+  on('config.set', (_$: any, e: any) => (deny ? ({ deny } as never) : (sets.push({ key: e.key, value: e.value }), { value: e.value } as never)))
+  await start($)
+  expect((await run($, 'on')).text).toBe('limits is already on.')
+  expect((await run($, 'off')).text).toBe('limits off in every conversation · /limits on turns it on')
+  expect(sets).toEqual([{ key: 'limits-meter.enabled', value: false }])
+  deny = 'managed by policy'
+  expect((await run($, 'off')).text).toBe('Could not change the option: managed by policy')
+})
+
+test('off: no band and no toast, but the command still answers', { options: { enabled: false } }, async ($, on) => {
+  const world = engine(on)
+  on('config.set', (_$: any, e: any) => ({ value: e.value }) as never)
+  await start($)
+  await $.session.measure({ ...FULL, rateLimits: [{ kind: 'five_hour', percentUsed: 92, resetsAt: '2026-10-08T13:12:00Z' }, LIMITS[1]] } as never)
+  expect(world.toasts).toEqual([])
+  expect((await run($, 'off')).text).toBe('limits is already off.')
+  expect((await run($, 'on')).text).toBe('limits on · /limits off turns it off')
+})
+
+// The quiet option, set in every mod by /pad quiet: no band, but from 95% of the 5h window one alert line.
+test('quiet: no band, one alert line from 95% of the 5h window, and show does not undo it', { options: { quiet: true } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  const calm = await band($)
+  expect(JSON.stringify(await calm.drawn())).not.toContain('64%')
+  await calm.unmount()
+
+  await run($, 'show')
+  await $.session.measure({ ...MEASURE, rateLimits: [{ kind: 'five_hour', percentUsed: 96, resetsAt: '2026-10-08T13:12:00Z' }, LIMITS[1]] } as never)
+  const hot = await band($)
+  const drawn = JSON.stringify(await hot.drawn())
+  expect(drawn).toContain('96%')
+  expect(drawn).not.toContain('"key":"details"')
+  expect(drawn).not.toContain('31%')
+  await hot.unmount()
 })

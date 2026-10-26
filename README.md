@@ -34,6 +34,12 @@ draw a band above the prompt, a pane, a status line entry or a toast. Requires C
 The images below are drawn from each mod's real output: `scripts/screenshots/run.sh` drives the
 mod with sample data through `claude plugin test` and renders what it drew.
 
+Every mod answers to the same four words, besides its own commands: `/x on` and `/x off` turn it
+on and off in every conversation (the `enabled` option, the same as in `/config`; off keeps only
+the command, so `/x on` can bring it back), and `/x hide` and `/x show` keep it on but take away
+what it draws on its own (the band, the toasts, the status line, the card). The pane and the
+command still open. `/x help` lists the rest. A mod's `hide` comes back in the next session.
+
 ### limits-meter
 
 The band shows on its own after the first response. Commands:
@@ -42,6 +48,7 @@ The band shows on its own after the first response. Commands:
 /limits          open the pane: plan windows, context in tokens, the last 20 turns
 /limits hide     hide the band above the prompt, in later sessions too
 /limits show     bring the band back
+/limits off | on  turn the mod off or on in every conversation
 /limits keep-warm on|off  keep the prompt cache warm (asks first, spends plan)
 /limits warn N   warn on a costly switch with the 5-hour window from N% (default 70)
 /limits help     list the commands
@@ -66,6 +73,10 @@ legend under the band; the pane lists each category and each MCP server.
 
 ![limits-meter: band above the prompt, the /limits pane and its toasts](screenshots/limits-meter.svg)
 
+**The cache clock and keep warm** ([mp4](screenshots/limits-meter-cache.mp4)): the countdown after a reply, the context bar by group, the `/limits` pane, and keep warm pinging before the cache goes cold. Drawn from the mod's real output by `scripts/screenshots/limits-meter-demo.sh`.
+
+![limits-meter: the cache countdown, the context bar by group, the /limits pane and keep warm](screenshots/limits-meter-cache.gif)
+
 #### Install
 
 ```
@@ -85,6 +96,9 @@ It counts on its own each time you answer a permission dialog. Commands:
 /allowlist remove 1    take rule 1 back out of allow, when the coach added it (asks first)
 /allowlist reset 2     set rule 2's count back to zero (asks first)
 /allowlist reset       clear this project's counts (asks first)
+/allowlist hide        keep counting, with no toast or note in the dialog
+/allowlist show        bring them back
+/allowlist off | on    turn the mod off or on in every conversation
 /allowlist help        list the commands
 ```
 
@@ -111,6 +125,9 @@ The status line and the toasts show on their own while subagents run. Commands:
 /watch clear        drop finished and demo agents
 /watch clear done   drop finished agents only
 /watch clear demo   drop demo agents only
+/watch hide         keep tracking, with no toast or status line
+/watch show         bring them back
+/watch off | on     turn the mod off or on in every conversation
 /watch help         list the commands
 ```
 
@@ -137,6 +154,9 @@ The status line and the toast show on their own each time a test runner runs in 
                     sparkline, last 10 runs
 /test-hud demo      add six fake runs that go from red to green
 /test-hud clear     drop the runs
+/test-hud hide      keep counting, with no status line or toast
+/test-hud show      bring them back
+/test-hud off | on  turn the mod off or on in every conversation
 /test-hud help      list the commands
 ```
 
@@ -160,8 +180,9 @@ Or for one session, from a clone: `claude --plugin-dir ./test-hud`.
 The menu shows on its own when a session starts and after `/clear`, until the first prompt.
 `◆ pad`, under the hint line below the prompt, opens the control panel: the session's
 model and effort as buttons (a press runs `/model` or `/effort`; `opus` and `max` turn yellow
-when the 5-hour window passes 70%), a button for each mod of this collection installed, by its
-name, and the shortcuts. Commands:
+when the 5-hour window passes 70%), then two tabs: Mods, a switchboard with a toggle (`/x on` and
+`off`) and an eye (`/x hide` and `show`) for each mod of this collection, and the shortcuts.
+The labels follow the `language` option. Commands:
 
 ```
 /pad                                        show the menu again
@@ -172,7 +193,9 @@ name, and the shortcuts. Commands:
 /pad remove 3                               drop button 3
 /pad reset                                  back to the defaults
 /pad place header | prompt | pane           where the menu shows: under the header, right above the prompt, or in a pane
-/pad off | on                               turn the menu off or back on
+/pad hide | show                            hide the menu or show it again
+/pad off | on                               turn the launchpad off or back on in every conversation
+/pad quiet [on | off]                       quiet mode: no mod draws anything by itself; a chip on the hint line brings it back
 ```
 
 ![launchpad: the welcome menu under the header, the row above the prompt, ◆ pad and the control panel](screenshots/launchpad.svg)
@@ -220,6 +243,7 @@ Three options shape what you see, all in `/config`:
 ```
 /plain-view                   the settings pane: every option in three tabs, one click each
 /plain-view on | off          show or hide the card and the tool rows
+/plain-view hide | show       keep the rows folded, without the card above the prompt
 /plain-view demo              a sample plan in the card for 12 seconds
 /plain-view palette           the 8 bar palettes with a sample, and a button to switch
 /plain-view palette aurora    switch to one by name
@@ -282,11 +306,11 @@ it makes.
 
 | Mod | Network | Runs processes | Files | Calls a model | Sends data anywhere |
 | --- | --- | --- | --- | --- | --- |
-| limits-meter | No | No | No | Only if you turn on keep-warm: one short message per cache lap, until your next prompt or 2 hours | No |
-| allowlist-coach | No | No | Reads and writes `.claude/settings.local.json`, or `.claude/settings.json` when you pick it, after you confirm | No | No |
-| agent-watch | No | No | No | No | No |
-| test-hud | No | No | Reads Bash's saved copy of an output too long to show whole | No | No |
-| launchpad | No | No | Reads `.claude/launchpad.json` and the agent files in `.claude/agents/`, in the project and in your home folder | No | No |
+| limits-meter | No | No | No (`on` and `off` write its own option through `/config`) | Only if you turn on keep-warm: one short message per cache lap, until your next prompt or 2 hours | No |
+| allowlist-coach | No | No | Reads and writes `.claude/settings.local.json`, or `.claude/settings.json` when you pick it, after you confirm. `on` and `off` write its own option through `/config` | No | No |
+| agent-watch | No | No | No (`on` and `off` write its own option through `/config`) | No | No |
+| test-hud | No | No | Reads Bash's saved copy of an output too long to show whole. `on` and `off` write its own option through `/config` | No | No |
+| launchpad | No | No | Reads `.claude/launchpad.json` and the agent files in `.claude/agents/`, in the project and in your home folder. `on` and `off` write its own option through `/config` | No | No |
 | plain-view | No | No | No (writes its own options through `/config` when you run `on`, `off` or `palette`, or press one in its settings pane) | No | No |
 
 ## Developing

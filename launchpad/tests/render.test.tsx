@@ -1,6 +1,11 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
+// A5 (prototype buttons-quiet-a5-a7, variant B): the Buttons of a tree, with the props the variant lives in.
+const buttonsOf = (tree: unknown) =>
+  [...JSON.stringify(tree).matchAll(/"type":"Button","props":(\{[^{}]*\})/g)].map(m => JSON.parse(m[1]!) as { key: string; variant?: string; plain?: boolean })
+const variantOf = (tree: unknown, key: string) => buttonsOf(tree).find(b => b.key === key)?.variant
+
 // /pad's own output row, as the transcript hands it to the hook.
 const ROW = { command: 'pad', args: '', text: 'Menu de atalhos do launchpad.', isErrored: false }
 const COMMANDS = [
@@ -180,6 +185,10 @@ test('/pad configuration opens the pane: order, remove, filter and add', async (
   const list = (await pad($, 'list')).text ?? ''
   expect(list.split('\n').map(l => l.split('  ')[1])).toEqual(['/context', '/compact', '@Explore', '/code-review'])
 
+  const config5 = await ui.drawn()
+  expect(variantOf(config5, 'reset')).toBe('secondary')
+  expect(variantOf(config5, 'close')).toBe('secondary')
+  expect(buttonsOf(config5).filter(b => b.variant === 'primary')).toHaveLength(0) // no decision: shortcuts are peers
   await ui.press({ key: 'close' })
   expect(w.closed).toEqual(['launchpad'])
   await ui.unmount()
@@ -211,21 +220,21 @@ test('symbol icons and English', { options: { icons: 'symbol', language: 'en' } 
   await ui.unmount()
 })
 
-test('/pad off hides every card until /pad on, across sessions', async ($, on) => {
+test('/pad hide hides every card until /pad show, across sessions', async ($, on) => {
   world(on)
   await start($)
   const ui = await row($)
   expect(JSON.stringify(await ui.drawn())).toContain('pad:compact')
 
-  expect((await pad($, 'off')).text).toContain('Launchpad desligado')
+  expect((await pad($, 'hide')).text).toContain('Launchpad oculto')
   expect(JSON.stringify(await ui.drawn())).not.toContain('pad:compact') // the card already drawn goes too
-  expect((await pad($, '')).text).toBe('O launchpad está desligado. /pad on liga de novo.')
+  expect((await pad($, '')).text).toBe('O launchpad está oculto. /pad show mostra de novo.')
   expect((await pad($, 'list')).text).toContain('/compact') // the list still works
 
   await start($) // a new session reads the store
-  expect((await pad($, '')).text).toBe('O launchpad está desligado. /pad on liga de novo.')
+  expect((await pad($, '')).text).toBe('O launchpad está oculto. /pad show mostra de novo.')
 
-  expect((await pad($, 'on')).text).toContain('Launchpad ligado')
+  expect((await pad($, 'show')).text).toContain('Menu de atalhos')
   expect(JSON.stringify(await ui.drawn())).toContain('pad:compact')
   await ui.unmount()
 })
@@ -319,7 +328,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await start($)
     const ui = await row($, surface)
     const drawn = JSON.stringify(await ui.drawn())
-    for (const verb of ['configuration', 'list', 'add', 'remove', 'reset', 'off', 'help']) expect(drawn).toContain(`"key":"cmd:${verb}"`)
+    for (const verb of ['configuration', 'list', 'add', 'remove', 'reset', 'hide', 'help']) expect(drawn).toContain(`"key":"cmd:${verb}"`)
 
     await ui.press({ key: 'cmd:configuration' })
     expect(w.opened).toEqual(['launchpad'])
@@ -337,9 +346,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(w.opened).toEqual(['launchpad', 'launchpad'])
     expect(w.fills).toEqual([])
 
-    await ui.press({ key: 'cmd:off' })
-    expect(JSON.stringify(await ui.drawn())).not.toContain('cmd:off') // off: the card goes
-    expect((await pad($, '')).text).toBe('O launchpad está desligado. /pad on liga de novo.')
+    await ui.press({ key: 'cmd:hide' })
+    expect(JSON.stringify(await ui.drawn())).not.toContain('cmd:hide') // hide: the card goes
+    expect((await pad($, '')).text).toBe('O launchpad está oculto. /pad show mostra de novo.')
     await ui.unmount()
   })
 }
@@ -472,7 +481,7 @@ test('/pad place prompt: the menu in a row right above the prompt, kept across s
   expect(w.commands).toEqual(['compact'])
   await ui.press({ key: 'band:settings' })
   expect(w.opened).toEqual(['launchpad'])
-  await pad($, 'off')
+  await pad($, 'hide')
   expect(JSON.stringify(await ui.drawn())).not.toContain('pad:compact')
   await ui.unmount()
 })
@@ -486,7 +495,7 @@ test('the row above the prompt goes after the other mods\' bands, against the bo
   expect(drawn).toContain('"key":"pad:compact"')
   expect(drawn).toContain('other mod band')
   expect(drawn.indexOf('other mod band')).toBeLessThan(drawn.indexOf('"key":"pad:compact"'))
-  await pad($, 'off')
+  await pad($, 'hide')
   const off = JSON.stringify(await ui.drawn())
   expect(off).not.toContain('pad:compact')
   expect(off).toContain('other mod band')
@@ -530,7 +539,7 @@ for (const place of ['header', 'prompt', 'pane'] as const) {
 test('start: ◆ pad stays while the menu is off, and the panel\'s /pad row offers on', async ($, on) => {
   world(on, files, undefined, COMMANDS, 'auto mode on')
   await start($)
-  await pad($, 'off')
+  await pad($, 'hide')
   const ui = await hint($)
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('auto mode on')
@@ -538,11 +547,11 @@ test('start: ◆ pad stays while the menu is off, and the panel\'s /pad row offe
   await ui.unmount()
   const p = await panel($)
   let rows = JSON.stringify(await p.drawn())
-  expect(rows).toContain('"key":"cmd:on"')
-  expect(rows).not.toContain('"key":"cmd:off"')
-  await p.press({ key: 'cmd:on' })
+  expect(rows).toContain('"key":"cmd:show"')
+  expect(rows).not.toContain('"key":"cmd:hide"')
+  await p.press({ key: 'cmd:show' })
   rows = JSON.stringify(await p.drawn())
-  expect(rows).toContain('"key":"cmd:off"')
+  expect(rows).toContain('"key":"cmd:hide"')
   expect((await pad($, '')).text).toBe('Menu de atalhos do launchpad.')
   await p.unmount()
 })
@@ -565,7 +574,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect((await pad($, 'panel')).text).toBeUndefined()
     expect(w.opened).toEqual(['launchpad-panel'])
     const ui = await panel($, surface)
-    const drawn = JSON.stringify(await ui.drawn())
+    let drawn = JSON.stringify(await ui.drawn())
     expect(drawn).toContain('✻ Painel')
     expect(drawn).toContain('Controles')
     for (const v of ['haiku', 'sonnet', 'low', 'medium', 'xhigh', 'max']) expect(drawn).toContain(`"key":"${['haiku', 'sonnet'].includes(v) ? 'model' : 'effort'}:${v}"`)
@@ -577,11 +586,11 @@ for (const surface of ['terminal', 'desktop'] as const) {
     // each mod by its plugin's name, the same in every language, with its command's icon
     for (const l of ['⏳ limits-meter', '🔐 allowlist-coach', '👀 agent-watch', '📜 plain-view']) expect(drawn).toContain(l)
     for (const l of ['⏱️ limites', '🛡️ permissões', '🛰️ agentes', 'transcript limpo']) expect(drawn).not.toContain(l)
-    if (surface === 'terminal') {
-      expect(drawn).toContain('"label":" 🔐 allowlist-coach "') // the longest fills the 20-column tile
-      expect(drawn).toContain('"label":" ⏳ limits-meter    "')
-    }
+    expect(drawn).toContain('Relógio do cache, limites de 5h e da semana, contexto') // P3: what each mod does
     expect(drawn).toContain('Atalhos')
+    expect(drawn).not.toContain('"key":"pad:compact"') // the shortcuts are the other tab
+    await ui.press({ key: 'tab:shortcuts' })
+    drawn = JSON.stringify(await ui.drawn())
     expect(drawn).toContain('"key":"pad:compact"')
     expect(drawn).not.toContain('"key":"pad:model"')
     expect(drawn).not.toContain('5h em')
@@ -589,17 +598,25 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
-test('panel: the bordered chips and the close button keep the tiles\' look and hover', async ($, on) => {
+test('P2: the chips, the shortcuts and the close button are one-line secondary buttons, no tile', async ($, on) => {
   world(on, files, undefined, [...COMMANDS, ...CONTROLS])
   await start($)
   await step($, 'claude-opus-5-5', 'high')
   const ui = await panel($)
-  const drawn = JSON.stringify(await ui.drawn())
-  expect(drawn).toContain('"label":" ○ sonnet "')
-  expect(drawn).toContain('"key":"box:model:sonnet"')
-  expect(drawn).toContain('"hover":{"color":"inverseText","bold":true}')
-  expect(drawn).toContain('"label":" Fechar "')
-  expect(drawn).toContain('"alignItems":"flex-start"')
+  let tree = await ui.drawn()
+  let drawn = JSON.stringify(tree)
+  expect(variantOf(tree, 'model:sonnet')).toBe('secondary')
+  expect(variantOf(tree, 'effort:low')).toBe('secondary')
+  expect(variantOf(tree, 'close')).toBe('secondary')
+  expect(drawn).toContain('"label":"○ sonnet"')
+  expect(drawn).not.toContain('borderStyle') // the 3-line tile is gone from the panel
+  expect(drawn).not.toContain('"key":"box:')
+  await ui.press({ key: 'tab:shortcuts' })
+  tree = await ui.drawn()
+  drawn = JSON.stringify(tree)
+  expect(variantOf(tree, 'pad:compact')).toBe('secondary')
+  expect(drawn).not.toContain('borderStyle')
+  for (const b of buttonsOf(tree).filter(b => b.variant)) expect(b.plain).toBeUndefined()
   await ui.unmount()
 })
 
@@ -649,9 +666,10 @@ test('5h at 74%: opus and max get a warning border and a warning line, and still
   const ui = await panel($)
   const drawn = JSON.stringify(await ui.drawn())
   expect(drawn).toContain('! 5h em 74%: opus e max gastam a janela mais rápido')
-  expect(drawn).toMatch(/"key":"box:model:opus"[^}]*"borderColor":"warning"/)
-  expect(drawn).toMatch(/"key":"box:effort:max"[^}]*"borderColor":"warning"/)
-  expect(drawn).not.toMatch(/"key":"box:model:haiku"[^}]*"borderColor":"warning"/)
+  // the warned chips keep their one-line button and draw the label in the warning color
+  expect(drawn).toMatch(/"key":"model:opus".*?"color":"warning"[^}]*\}[^]*?"children":\["○ opus"\]/)
+  expect(drawn).toMatch(/"key":"effort:max".*?"color":"warning"/)
+  expect(drawn).toContain('"label":"○ haiku"') // not warned: a plain label
   await ui.press({ key: 'model:opus' })
   expect(w.commands).toEqual(['model opus']) // no confirmation
   await ui.unmount()
@@ -662,7 +680,7 @@ test('below 70% there is no warning', async ($, on) => {
   await start($)
   const drawn = JSON.stringify(await (await panel($)).drawn())
   expect(drawn).not.toContain('5h em')
-  expect(drawn).not.toContain('"borderColor":"warning"')
+  expect(drawn).not.toContain('"color":"warning"')
 })
 
 test('the model chips come from the /config model row when it lists them', async ($, on) => {
@@ -705,12 +723,11 @@ test('panel: some mods missing, their install buttons after the installed ones; 
   expect(drawn).not.toContain('"key":"install:limits-meter"')
 })
 
-test('panel and /pad configuration: every mod installed, a line says so', async ($, on) => {
+test('panel and /pad configuration: every mod installed, /pad configuration says so', async ($, on) => {
   world(on, files, undefined, [...COMMANDS, ...MOD_COMMANDS])
   await start($)
   const drawn = JSON.stringify(await (await panel($)).drawn())
-  expect(drawn).toContain('Todos os mods desta coleção já estão instalados.')
-  expect(drawn).not.toContain('install:')
+  expect(drawn).not.toContain('install:') // nothing is missing, so the Mods tab has no install buttons
   await pad($, 'configuration')
   expect(JSON.stringify(await (await pane($)).drawn())).toContain('Todos os mods desta coleção já estão instalados.')
 })
@@ -823,3 +840,260 @@ test('reset from the /pad row asks first; only "Voltar aos padrões" resets', as
   await ui.unmount()
 })
 
+
+// /pad on and off: the launchpad itself
+
+test('/pad on and off write the enabled option; a refused one says why', async ($, on) => {
+  world(on)
+  const sets: { key: string; value: unknown }[] = []
+  let deny = ''
+  on('config.set', (_$: any, e: any) => (deny ? ({ deny } as never) : (sets.push({ key: e.key, value: e.value }), { value: e.value } as never)))
+  await start($)
+  expect((await pad($, 'on')).text).toBe('pad já está ligado.')
+  expect((await pad($, 'off')).text).toBe('pad desligado em todas as conversas · /pad on liga')
+  expect(sets).toEqual([{ key: 'launchpad.enabled', value: false }])
+  deny = 'managed by policy'
+  expect((await pad($, 'off')).text).toBe('Não deu para mudar a opção: managed by policy')
+})
+
+test('off: no menu at the start, but /pad still answers and on writes the option back', { options: { enabled: false } }, async ($, on) => {
+  const w = world(on)
+  const sets: { key: string; value: unknown }[] = []
+  on('config.set', (_$: any, e: any) => (sets.push({ key: e.key, value: e.value }), { value: e.value }) as never)
+  await start($)
+  expect(w.logs ?? []).toEqual([])
+  expect((await pad($, 'off')).text).toBe('pad já está desligado.')
+  expect((await pad($, 'on')).text).toBe('pad ligado · /pad off desliga')
+  expect(sets).toEqual([{ key: 'launchpad.enabled', value: true }])
+})
+
+test('show brings back a menu that hide took away', async ($, on) => {
+  world(on)
+  await start($)
+  await pad($, 'hide')
+  expect((await pad($, '')).text).toBe('O launchpad está oculto. /pad show mostra de novo.')
+  expect((await pad($, 'show')).text).toBe('Menu de atalhos do launchpad.')
+  expect((await pad($, '')).text).toBe('Menu de atalhos do launchpad.')
+})
+
+// /pad quiet: every mod's `quiet` option at once, and the chip on the hint line (prototype buttons-quiet-a5-a7, A7 variant A).
+const QUIET_ROWS = ['limits-meter', 'allowlist-coach', 'agent-watch', 'test-hud', 'launchpad'].map(p => ({ key: `${p}.quiet`, value: false }))
+const recordSets = (on: On, deny = '') => {
+  const sets: { key: string; value: unknown }[] = []
+  on('config.set', (_$: any, e: any) => (deny ? ({ deny } as never) : (sets.push({ key: e.key, value: e.value }), { value: e.value } as never)))
+  return sets
+}
+
+test('/pad quiet on and off set every mod\'s quiet option, the launchpad last; bare flips it', async ($, on) => {
+  world(on, {}, undefined, undefined, undefined, { rows: QUIET_ROWS })
+  const sets = recordSets(on)
+  await start($)
+  expect((await pad($, 'quiet off')).text).toBe('discreto já está desligado.')
+  expect((await pad($, 'quiet on')).text).toBe('discreto ligado em 5 mods: nada aparece sozinho · /pad quiet off volta')
+  expect(sets.map(s => s.key)).toEqual(['limits-meter.quiet', 'allowlist-coach.quiet', 'agent-watch.quiet', 'test-hud.quiet', 'launchpad.quiet'])
+  expect(sets.every(s => s.value === true)).toBe(true)
+  sets.length = 0
+  expect((await pad($, 'quiet')).text).toBe('discreto ligado em 5 mods: nada aparece sozinho · /pad quiet off volta')
+  expect((await pad($, 'quiet maybe')).text).toContain('/pad quiet on | off')
+})
+
+test('/pad quiet names a mod that has options but no quiet row, and says why a refusal failed', async ($, on) => {
+  world(on, {}, undefined, undefined, undefined, { rows: [...QUIET_ROWS.slice(0, 2), { key: 'plain-view.enabled', value: true }, { key: 'launchpad.quiet', value: false }] })
+  const sets = recordSets(on)
+  await start($)
+  expect((await pad($, 'quiet on')).text).toBe('discreto ligado em 3 mods: nada aparece sozinho · /pad quiet off volta Sem a opção quiet (atualize): plain-view.')
+  expect(sets.map(s => s.key)).toEqual(['limits-meter.quiet', 'allowlist-coach.quiet', 'launchpad.quiet'])
+})
+
+test('/pad quiet with no mod that has the option, and a refused change', async ($, on) => {
+  const w = world(on, {}, undefined, undefined, undefined, { rows: [] })
+  recordSets(on)
+  await start($)
+  expect((await pad($, 'quiet on')).text).toBe('Nenhum mod com a opção quiet. Atualize os mods da coleção.')
+  expect(w.commands).toEqual([])
+})
+
+test('/pad quiet: a refusal says why', async ($, on) => {
+  world(on, {}, undefined, undefined, undefined, { rows: QUIET_ROWS })
+  recordSets(on, 'managed by policy')
+  await start($)
+  expect((await pad($, 'quiet on')).text).toBe('Não deu para mudar a opção: managed by policy')
+})
+
+for (const surface of ['terminal', 'desktop']) {
+  test(`calm: the hint line has ◆ pad and a ◦ discreto chip that turns quiet on, on ${surface}`, async ($, on) => {
+    world(on, {}, undefined, undefined, undefined, { rows: QUIET_ROWS })
+    const sets = recordSets(on)
+    await start($, surface)
+    const ui = await hint($, surface)
+    const drawn = JSON.stringify(await ui.drawn())
+    expect(drawn).toContain('pad:panel')
+    expect(drawn).toContain('◦ discreto')
+    await ui.press({ key: 'quiet:on' })
+    expect(sets.map(s => s.key)).toContain('launchpad.quiet')
+    expect(sets.every(s => s.value === true)).toBe(true)
+    await ui.unmount()
+  })
+
+  test(`quiet: only ◦ discreto · mostrar remains on the hint line, and it turns quiet off, on ${surface}`, { options: { quiet: true } }, async ($, on) => {
+    const w = world(on, {}, undefined, undefined, undefined, { rows: QUIET_ROWS })
+    const sets = recordSets(on)
+    await start($, surface)
+    const ui = await hint($, surface)
+    const drawn = JSON.stringify(await ui.drawn())
+    expect(drawn).not.toContain('pad:panel')
+    expect(drawn).toContain('◦ discreto · ')
+    expect(drawn).toContain('mostrar')
+    await ui.press({ key: 'quiet:off' })
+    expect(sets.every(s => s.value === false)).toBe(true)
+    expect(sets.at(-1)?.key).toBe('launchpad.quiet')
+    expect(w.toasts.at(-1)).toContain('discreto desligado em 5 mods')
+    await ui.unmount()
+  })
+}
+
+test('quiet: no menu at the start and /pad show says it is still quiet', { options: { quiet: true } }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  expect(w.logs).toEqual([])
+  expect((await pad($, 'show')).text).toBe('O launchpad está discreto. /pad quiet off mostra de novo.')
+})
+
+// P1 to P3 (prototype launchpad-0.9.0, variant A): the panel is a switchboard.
+const ENABLED = ['limits-meter', 'allowlist-coach', 'agent-watch', 'plain-view'].map(p => ({ key: `${p}.enabled`, value: p !== 'agent-watch' }))
+const SB_COMMANDS = [...COMMANDS, ...CONTROLS, ...MOD_COMMANDS]
+const sbWorld = (on: On, env?: Record<string, string>) => world(on, files, env, SB_COMMANDS, undefined, { rows: [...ENABLED, ...QUIET_ROWS] })
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`switchboard: a row per mod with its eye and toggle, the one that is off dim with no eye, and the quiet row, on ${surface}`, async ($, on) => {
+    sbWorld(on)
+    await start($)
+    const ui = await panel($, surface)
+    const tree = await ui.drawn()
+    const drawn = JSON.stringify(tree)
+    for (const m of ['limits-meter', 'allowlist-coach', 'plain-view']) {
+      expect(drawn).toContain(`"key":"mod:${m}"`)
+      expect(drawn).toContain(`"key":"eye:${m}"`)
+      expect(drawn).toContain(`"key":"toggle:${m}"`)
+    }
+    expect(drawn).not.toContain('"key":"mod:agent-watch"') // off: text, not a button
+    expect(drawn).not.toContain('"key":"eye:agent-watch"')
+    expect(drawn).toContain('"key":"toggle:agent-watch"')
+    expect(drawn).toContain('/limits abre · hide oculta')
+    expect(drawn).toContain('/watch on liga')
+    expect(drawn).toContain('◦ discreto')
+    expect(drawn).toContain('"key":"toggle:quiet"')
+    expect(drawn).toContain('Desligado vale em toda conversa. Oculto mantém ligado, fora de vista.')
+    expect(drawn).toContain('Mod novo da coleção aparece aqui sozinho.')
+    expect(drawn).not.toContain('"key":"mod:test-hud"')
+    if (surface === 'terminal') {
+      expect(drawn).toContain('"label":"● on"')
+      expect(drawn).toContain('"label":"○ off"')
+      expect(variantOf(tree, 'toggle:limits-meter')).toBe('secondary')
+      expect(variantOf(tree, 'eye:limits-meter')).toBe('secondary')
+    } else {
+      // the green block with a knob: a Button whose child is a Text on the success color; off is inactive
+      expect(drawn).toMatch(/"key":"toggle:limits-meter".*?"backgroundColor":"success"/)
+      expect(drawn).toMatch(/"key":"toggle:agent-watch".*?"backgroundColor":"inactive"/)
+    }
+    await ui.unmount()
+  })
+}
+
+test('switchboard: the toggle runs /<mod> off or on and the panel redraws; the quiet toggle runs /pad quiet', async ($, on) => {
+  const w = sbWorld(on)
+  const sets = recordSets(on)
+  await start($)
+  const ui = await panel($)
+  await ui.press({ key: 'toggle:limits-meter' })
+  await ui.press({ key: 'toggle:agent-watch' })
+  expect(w.commands).toEqual(['limits off', 'watch on'])
+  await ui.press({ key: 'toggle:quiet' })
+  expect(sets.map(s => s.key)).toContain('launchpad.quiet')
+  expect(sets.every(s => s.value === true)).toBe(true)
+  expect(w.toasts.at(-1)).toContain('discreto ligado')
+  await ui.unmount()
+})
+
+test('switchboard: the eye hides and shows a mod with /<mod> hide and show, and the launchpad remembers it', async ($, on) => {
+  const w = sbWorld(on)
+  await start($)
+  let ui = await panel($)
+  await ui.press({ key: 'eye:plain-view' })
+  expect(w.commands).toEqual(['plain-view hide'])
+  let drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('/plain-view show mostra')
+  expect(drawn).toMatch(/"key":"eye:plain-view".*?"label":"◌"/)
+  await ui.unmount()
+  await start($) // a new session reads the store: the eye is remembered
+  ui = await panel($)
+  expect(JSON.stringify(await ui.drawn())).toContain('/plain-view show mostra')
+  await ui.press({ key: 'eye:plain-view' })
+  expect(w.commands).toEqual(['plain-view hide', 'plain-view show'])
+  drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('/plain-view abre · hide oculta')
+  await ui.unmount()
+  await start($)
+  ui = await panel($)
+  expect(JSON.stringify(await ui.drawn())).toContain('/plain-view abre · hide oculta')
+  await ui.unmount()
+})
+
+test('switchboard: a mod with no enabled option (an older one) shows no toggle and no eye, only its button', async ($, on) => {
+  world(on, files, undefined, SB_COMMANDS, undefined, { rows: [] })
+  await start($)
+  const drawn = JSON.stringify(await (await panel($)).drawn())
+  expect(drawn).toContain('"key":"mod:limits-meter"')
+  expect(drawn).not.toContain('"key":"toggle:limits-meter"')
+  expect(drawn).not.toContain('"key":"eye:limits-meter"')
+})
+
+test('tabs: Mods and Shortcuts swap the body, and model and effort stay on top', async ($, on) => {
+  sbWorld(on)
+  await start($)
+  const ui = await panel($)
+  let drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('"key":"tab:shortcuts"')
+  expect(drawn).not.toContain('"key":"tab:mods"') // the open tab is bold text
+  expect(drawn).toContain('"key":"model:sonnet"')
+  await ui.press({ key: 'tab:shortcuts' })
+  drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('"key":"tab:mods"')
+  expect(drawn).not.toContain('"key":"row:') // no switchboard rows
+  expect(drawn).not.toContain('toggle:limits-meter')
+  expect(drawn).toContain('"key":"model:sonnet"') // controls stay
+  expect(drawn).toContain('"key":"pad:compact"')
+  await ui.press({ key: 'tab:mods' })
+  expect(JSON.stringify(await ui.drawn())).toContain('toggle:limits-meter')
+  await ui.unmount()
+})
+
+test('P1: the panel is in English from the language option: tabs, descriptions, rules, verbs', { options: { language: 'en' } }, async ($, on) => {
+  sbWorld(on, { HOME: '/home/ana', LANG: 'pt_BR.UTF-8' })
+  await start($)
+  const ui = await panel($)
+  const drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('Cache clock, 5h and weekly limits, context')
+  expect(drawn).toContain('/limits opens · hide hides')
+  expect(drawn).toContain('Off means off in every chat.')
+  expect(drawn).toContain('"label":"configure"')
+  expect(drawn).toContain('"label":"help"')
+  expect(drawn).not.toContain('configurar')
+  expect(drawn).not.toContain('Desligado')
+  expect(drawn).toContain('"key":"cmd:configuration"') // the key and the command stay English
+  await ui.unmount()
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`P1: the row under the menu has its labels in Portuguese and runs the English argument, on ${surface}`, async ($, on) => {
+    const w = world(on)
+    await start($)
+    const ui = await row($, surface)
+    const drawn = JSON.stringify(await ui.drawn())
+    for (const label of ['configurar', 'listar', 'adicionar', 'remover', 'restaurar', 'posição', 'ocultar', 'ajuda']) expect(drawn).toContain(`"label":"${label}"`)
+    for (const verb of ['configuration', 'list', 'add', 'remove', 'reset', 'hide', 'help']) expect(drawn).not.toContain(`"label":"${verb}"`)
+    await ui.press({ key: 'cmd:list' })
+    expect(w.logs.length).toBeGreaterThan(0) // /pad list ran
+    await ui.unmount()
+  })
+}

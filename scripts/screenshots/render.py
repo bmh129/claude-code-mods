@@ -20,7 +20,9 @@ def spans(node, style):
     if isinstance(node, (str, int, float)): return [(str(node), style)]
     p = node.get('props') or {}
     if node['type'] == 'Button':
-        return [(p['label'] if p.get('plain') else f"[ {p['label']} ]", merge(style, {'dimColor': True} if p.get('dimColor') else {'color': 'cyan'}))]
+        # A5: a primary is `[ label ]` in the accent color, a secondary `[ label ]` in the text color; plain is bare text.
+        look = {'color': 'claude'} if p.get('variant') == 'primary' else {} if p.get('variant') == 'secondary' else {'dimColor': True} if p.get('dimColor') else {'color': 'cyan'}
+        return [(p['label'] if p.get('plain') else f"[ {p['label']} ]", merge(style, look))]
     out = []
     for c in node.get('children') or []:
         out += spans(c, merge(style, p))

@@ -68,6 +68,12 @@ declare module 'claude-code' {
       model: string
       /** The effort of the last model request; null until the first one, or for a model without effort. */
       effort: Effort | null
+      /** The panel's tab: the mods' switchboard or the shortcuts. */
+      tab: 'mods' | 'shortcuts'
+      /** The mods the eye hid from here (the plugin names); the flag itself lives in each mod. */
+      eyes: string[]
+      /** Moves when a row changed what the panel reads, so the panel redraws. */
+      rev: number
     }
   }
 }

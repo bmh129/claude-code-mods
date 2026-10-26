@@ -121,6 +121,7 @@ Five short scenarios, each drawn by the mod itself (`scripts/screenshots/plain-v
 ```
 /plain-view                   the settings pane (also /plain-view config)
 /plain-view on | off          show or hide the card and the tool rows
+/plain-view hide | show       keep the rows folded, without the card above the prompt
 /plain-view demo              a sample plan in the card for 12 seconds, even when off
 /plain-view palette           the 8 bar palettes with a sample, and a button to switch
 /plain-view palette aurora    switch to one by name

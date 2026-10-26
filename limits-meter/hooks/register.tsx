@@ -33,7 +33,8 @@ import type { CacheClock, ContextGroups, KeepWarm, Samples, Snapshot, Turn, Ttl 
 import type { Setting } from './meter'
 import { addSamples, alerts, bar, barCells, clockOf, contextSpark, effortLevel, gauge, groupContext, heaviest, inferTtl, keepMargin, KEEP_WARM_MAX_MS, KEEP_WARM_TEXT, label, mini, mmss, needsCompact, pace, pct, resetIn, splitOf, summary, switchWarning, toSnapshot, toTurn, tone as toneOf, TTL_MS, TURNS_KEPT } from './meter'
 import type { IconStyle, Lang, Verb } from './ui'
-import { clip, fillArgs, glyph, langOf, linesOf, shortModel, styleOf, tokens, verbRow } from './ui'
+import { PRIMARY, SECONDARY, clip, fillArgs, glyph, langOf, linesOf, shortModel, styleOf, tokens, verbRow } from './ui'
+import { switchOf, switchWords } from './switch'
 import { COMMAND, WORDS } from './words'
 
 const PANE = 'limits'
@@ -48,6 +49,10 @@ const EMPTY: Snapshot = { limits: [], contextPercent: null, contextTokens: null,
 const snapshot = atom({ plugin: 'limits-meter', key: 'snapshot' } as const, EMPTY)
 const turns = atom({ plugin: 'limits-meter', key: 'turns' } as const, [] as Turn[])
 const isHidden = atom({ plugin: 'limits-meter', key: 'isHidden' } as const, false)
+/** The `quiet` option, set in every mod by `/pad quiet`: hides what the mod draws by itself, as hide does. `show` does not undo it. */
+let isQuiet = false
+/** From this share of the 5h window quiet still draws one line: the limit is about to stop the work. */
+const QUIET_ALERT_AT = 95
 const fired = atom({ plugin: 'limits-meter', key: 'fired' } as const, [] as string[])
 const samples = atom({ plugin: 'limits-meter', key: 'samples' } as const, {} as Samples)
 const model = atom({ plugin: 'limits-meter', key: 'model' } as const, null as string | null)
@@ -59,6 +64,8 @@ const groups = atom({ plugin: 'limits-meter', key: 'groups' } as const, null as 
 
 // Set by register from the options, and by session.start from the system's LANG.
 let lang: Lang = 'en'
+/** The `enabled` option; off, only the command answers. */
+let isOn = true
 let warnAt = 70
 let dangerAt = 90
 /** The band's cells by id (5h, wk, spend, ctx, cache); null shows them all. */
@@ -111,6 +118,20 @@ const take = async ($: EngineInterface, next: Snapshot) => {
 const setHidden = async ($: EngineInterface, hidden: boolean) => {
   await update($, isHidden, () => hidden)
   await $.store.set(KEY_HIDDEN, hidden)
+}
+
+/** Changes the mod's `enabled` option as /config would; the engine reloads the mod with it. */
+const setEnabled = async ($: EngineInterface, value: boolean): Promise<string | null> => {
+  const result = await $.config.set({ key: 'limits-meter.enabled', value } as never)
+  return result && 'deny' in result && result.deny !== undefined ? String(result.deny) : null
+}
+
+/** /limits on|off: the option, in every conversation. hide and show are the band's own, below. */
+const runEnabled = async ($: EngineInterface, want: boolean): Promise<{ text?: string }> => {
+  const s = switchWords(lang, COMMAND)
+  if (want === isOn) return { text: want ? s.alreadyOn : s.alreadyOff }
+  const deny = await setEnabled($, want)
+  return { text: deny ? s.denied(deny) : want ? s.on : s.off }
 }
 
 /** Sets the costly-switch threshold, and keeps it for later sessions. */
@@ -290,6 +311,8 @@ const open = ($: EngineInterface) => $.ui.open({ id: PANE, title: WORDS[lang].pa
 /** /limits and its arguments: what the command answers, and what the pane's verbs run. */
 const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: string }> => {
   const w = WORDS[lang]
+  const choice = switchOf(args)
+  if (choice === 'on' || choice === 'off') return runEnabled($, choice === 'on')
   const [verb = '', arg = ''] = args.trim().toLowerCase().split(/\s+/)
   if (verb === 'warn') {
     if (arg === '') return { text: w.warnIs(await read($, switchAt)) }
@@ -354,6 +377,8 @@ export const register: Register = (on, options) => {
   density = options.density === 'bars' || options.density === 'mini' || options.density === 'numbers' ? options.density : 'auto'
   format = options.format === 'compact' ? 'compact' : 'full'
   style = styleOf(options.icons)
+  isOn = options.enabled !== false
+  isQuiet = options.quiet === true
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -364,9 +389,10 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: COMMAND,
       description: WORDS[lang].description,
-      argumentHint: '[hide|show|keep-warm on|off|warn N|help]',
+      argumentHint: '[on|off|hide|show|keep-warm on|off|warn N|help]',
       immediate: true,
     })
+    if (!isOn) return result
     const hidden = (await $.store.get(KEY_HIDDEN).catch(() => undefined)) === true
     await update($, isHidden, () => hidden)
     const kept = await $.store.get(KEY_SWITCH).catch(() => undefined)
@@ -391,6 +417,11 @@ export const register: Register = (on, options) => {
     await takeGroups($)
     return result
   })
+
+  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
+
+  // Off: only the command above answers, so `/limits on` can bring the rest back.
+  if (!isOn) return
 
   on('session.measure', async ($, e, next) => {
     const result = await next(e)
@@ -471,11 +502,17 @@ export const register: Register = (on, options) => {
     return <Text dimColor>{WORDS[lang].keepRow}</Text>
   })
 
-  on('command.run', { command: COMMAND }, ($, e) => runCommand($, e.args))
-
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || (await read($, isHidden))) return next(e)
     const s = await read($, snapshot)
+    if (isQuiet) {
+      const five = s.limits.find(l => l.kind === 'five_hour')
+      if (!five || five.percent < QUIET_ALERT_AT) return next(e)
+      const { Box, Text } = $.ui.resolve(e)
+      const line = <Text key="quiet-alert" color="error" bold>{`! ${WORDS[lang].windowAlert(label(five.kind, lang), pct(five.percent), resetIn(five.resetsAt, await $.clock.now(), lang))}`}</Text>
+      const theirs = await next(e)
+      return theirs ? <Box key="quiet" flexDirection="column">{theirs}{line}</Box> : line
+    }
     if (s.limits.length === 0 && s.contextPercent === null) return next(e)
 
     const { Box, Text, Button } = $.ui.resolve(e)
@@ -517,11 +554,11 @@ export const register: Register = (on, options) => {
       ) : null
 
     const verbs = [
-      ...(clock?.state === 'cooling' && !kept ? [<Button key="keep" label={w.keepWarm} plain color="warning" onPress={() => void pressKeep($)} />] : []),
-      ...(kept ? [<Button key="keep-stop" label={w.keepStop} plain dimColor onPress={() => void stopKeep($, 'manual')} />] : []),
-      ...(needsCompact(s) ? [<Button key="compact" label={w.compact} plain color="warning" onPress={() => fill($, w.compactFill)} />] : []),
-      <Button key="details" label={w.details} plain dimColor onPress={() => open($)} />,
-      <Button key="hide" label={w.hide} plain dimColor onPress={() => setHidden($, true)} />,
+      ...(clock?.state === 'cooling' && !kept ? [<Button key="keep" label={w.keepWarm} {...SECONDARY} onPress={() => void pressKeep($)} />] : []),
+      ...(kept ? [<Button key="keep-stop" label={w.keepStop} {...SECONDARY} onPress={() => void stopKeep($, 'manual')} />] : []),
+      ...(needsCompact(s) ? [<Button key="compact" label={w.compact} {...PRIMARY} onPress={() => fill($, w.compactFill)} />] : []),
+      <Button key="details" label={w.details} {...SECONDARY} onPress={() => open($)} />,
+      <Button key="hide" label={w.hide} {...SECONDARY} onPress={() => setHidden($, true)} />,
     ]
 
     if (format === 'compact') {
@@ -698,8 +735,8 @@ export const register: Register = (on, options) => {
                   {clockView(Text, clock, keep !== null)}
                   <Text dimColor>{`  ${w.cacheOf(c.ttl === '1h' ? '1 h' : '5 min')}`}</Text>
                 </Text>
-                {keep === null && clock.state !== 'cold' && <Button key="keep" label={w.keepWarm} plain color="warning" onPress={() => void pressKeep($)} />}
-                {keep !== null && <Button key="keep-stop" label={w.keepStop} plain dimColor onPress={() => void stopKeep($, 'manual')} />}
+                {keep === null && clock.state !== 'cold' && <Button key="keep" label={w.keepWarm} {...SECONDARY} onPress={() => void pressKeep($)} />}
+                {keep !== null && <Button key="keep-stop" label={w.keepStop} {...SECONDARY} onPress={() => void stopKeep($, 'manual')} />}
               </Box>
               <Text dimColor>{sentence}</Text>
             </Box>
@@ -727,7 +764,7 @@ export const register: Register = (on, options) => {
               <Text bold>{` ${pct(s.contextPercent).padStart(4)}`}</Text>
               <Text dimColor>{s.contextTokens !== null ? `  ${w.ofWindow(tokens(s.contextTokens), tokens(s.contextWindow))}` : ''}</Text>
             </Text>
-            {needsCompact(s) && <Button key="compact" label={w.compact} plain color="warning" onPress={() => fill($, w.compactFill)} />}
+            {needsCompact(s) && <Button key="compact" label={w.compact} {...PRIMARY} onPress={() => fill($, w.compactFill)} />}
           </Box>
           {trend.length > 1 && (
             <Text>
@@ -802,7 +839,7 @@ export const register: Register = (on, options) => {
 
         <Box flexDirection="row" flexWrap="wrap" gap={2}>
           {verbRow({ Box, Text, Button }, COMMAND, VERBS, v => pressVerb($, v))}
-          <Button key="close" role="dismiss" label={w.close} onPress={() => $.ui.close({ id: PANE })} />
+          <Button key="close" role="dismiss" {...SECONDARY} label={w.close} onPress={() => $.ui.close({ id: PANE })} />
         </Box>
       </Box>
     )

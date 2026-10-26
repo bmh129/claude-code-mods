@@ -6,6 +6,11 @@ const flat = (n: unknown): string =>
 
 const NOW = Date.parse('2026-10-08T12:00:00Z')
 const MIN = 60_000
+
+// A5 (prototype buttons-quiet-a5-a7, variant B): the Buttons of a tree, with the props the variant lives in.
+const buttonsOf = (tree: unknown) =>
+  [...JSON.stringify(tree).matchAll(/"type":"Button","props":(\{[^{}]*\})/g)].map(m => JSON.parse(m[1]!) as { key: string; variant?: string; plain?: boolean })
+const variantOf = (tree: unknown, key: string) => buttonsOf(tree).find(b => b.key === key)?.variant
 const PROPS = { title: 'Agents', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} }
 const RUN = { command: 'watch', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } }
 const SPAWN = { tool_use_id: 'tu1', prompt: 'go', description: 'Map the API routes', subagentType: 'Explore', provider: { plugin: 'engine', tier: 'core' }, parentModel: 'claude-opus-5-5', background: true, fork: false }
@@ -132,7 +137,7 @@ test('the pane footer: clear waits in the prompt, help writes to the transcript,
   await pane.press({ key: 'verb:clear' })
   expect(fills).toEqual(['/watch clear'])
   await pane.press({ key: 'verb:help' })
-  expect(logs).toHaveLength(5)
+  expect(logs).toHaveLength(8)
   expect(logs[1]).toContain('/watch demo')
   await pane.press({ key: 'close' })
   expect(closed).toEqual(['agent-watch'])
@@ -180,6 +185,11 @@ test('share bar, an opened row with its tool calls, and investigate on a stalled
   let drawn = JSON.stringify(await pane.drawn())
   expect(drawn).toContain('Fix the flaky test 56%')
   expect(drawn).toContain('Map the API routes 32%')
+  expect(variantOf(JSON.parse(drawn), 'investigate:demo-2')).toBe('primary')
+  expect(buttonsOf(JSON.parse(drawn)).filter(b => b.variant === 'primary')).toHaveLength(1)
+  expect(variantOf(JSON.parse(drawn), 'sort')).toBe('secondary')
+  expect(variantOf(JSON.parse(drawn), 'close')).toBe('secondary')
+  for (const b of buttonsOf(JSON.parse(drawn)).filter(b => b.variant)) expect(b.plain).toBeUndefined()
 
   await pane.press({ key: 'open:demo-2' })
   drawn = JSON.stringify(await pane.drawn())
@@ -232,4 +242,80 @@ test('the summary says how much of the 5h window the wave used', async ($, on) =
   await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer', agentId: 'a1' } as never)
   await clock.advance(5000)
   expect(toasts.find(t => t.startsWith('Agents done'))).toContain('. Used ~6% of the 5h window. /watch')
+})
+
+// /watch on, off, hide and show
+
+const switchWorld = (on: any) => {
+  const w = { toasts: [] as string[], statuses: [] as (string | undefined)[], sets: [] as { key: string; value: unknown }[], deny: '' }
+  mock.clock(on, { now: NOW })
+  mock.store(on)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('ui.toast', (_$: any, e: any) => (w.toasts.push(e.text), { value: undefined }) as never)
+  on('ui.status', (_$: any, e: any) => (w.statuses.push(e.text), { value: undefined }) as never)
+  on('command.register', () => ({ value: undefined }) as never)
+  on('session.start', () => ({ cwd: '/repo' }) as never)
+  on('agent.list', () => ({ value: [] }) as never)
+  on('config.set', (_$: any, e: any) => {
+    if (w.deny) return { deny: w.deny } as never
+    w.sets.push({ key: e.key, value: e.value })
+    return { value: e.value } as never
+  })
+  return w
+}
+
+test('hide: on but silent, so the demo stall raises no toast, and show brings the toast back', async ($, on) => {
+  const w = switchWorld(on)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  expect((await $.command.run({ ...RUN, args: 'hide' } as never)).text).toBe('watch hidden but on · /watch show brings it back')
+  await $.command.run({ ...RUN, args: 'demo' } as never)
+  expect(w.toasts).toEqual([])
+  expect((await $.command.run({ ...RUN, args: 'show' } as never)).text).toBe('watch shown · /watch hide hides it')
+  await $.command.run({ ...RUN, args: 'clear demo' } as never)
+  await $.command.run({ ...RUN, args: 'demo' } as never)
+  expect(w.toasts.some(t => t.includes('looks stalled'))).toBe(true)
+})
+
+test('hide is kept for the next session', async ($, on) => {
+  const w = switchWorld(on)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  await $.command.run({ ...RUN, args: 'hide' } as never)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  await $.command.run({ ...RUN, args: 'demo' } as never)
+  expect(w.toasts).toEqual([])
+})
+
+test('on and off write the enabled option; on says it is already on', async ($, on) => {
+  const w = switchWorld(on)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  expect((await $.command.run({ ...RUN, args: 'on' } as never)).text).toBe('watch is already on.')
+  expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('watch off in every conversation · /watch on turns it on')
+  expect(w.sets).toEqual([{ key: 'agent-watch.enabled', value: false }])
+})
+
+test('off: only the command answers, and on writes the option back', { options: { enabled: false, language: 'pt-BR' } }, async ($, on) => {
+  const w = switchWorld(on)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('watch já está desligado.')
+  expect((await $.command.run({ ...RUN, args: 'on' } as never)).text).toBe('watch ligado · /watch off desliga')
+  expect(w.sets).toEqual([{ key: 'agent-watch.enabled', value: true }])
+})
+
+test('a refused option says why', async ($, on) => {
+  const w = switchWorld(on)
+  w.deny = 'managed by policy'
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('Could not change the option: managed by policy')
+})
+
+// The quiet option, set in every mod by /pad quiet: silent like hide, and `show` does not undo it.
+test('quiet: no toast from the demo stall, and show does not undo it', { options: { quiet: true } }, async ($, on) => {
+  const w = switchWorld(on)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  await $.command.run({ ...RUN, args: 'demo' } as never)
+  expect(w.toasts).toEqual([])
+  expect((await $.command.run({ ...RUN, args: 'show' } as never)).text).toBe('watch shown · /watch hide hides it')
+  await $.command.run({ ...RUN, args: 'clear demo' } as never)
+  await $.command.run({ ...RUN, args: 'demo' } as never)
+  expect(w.toasts).toEqual([])
 })

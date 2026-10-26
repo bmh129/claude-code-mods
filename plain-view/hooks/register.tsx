@@ -75,7 +75,8 @@ import type { RequestMode } from './plan'
 import type { Setting, SettingKey, SettingValue } from './settings'
 import { awayFromDefaults, SETTINGS, settingsOf, tabOf, TABS } from './settings'
 import type { IconStyle, Lang, Verb } from './ui'
-import { langOf, linesOf, styleOf, verbRow } from './ui'
+import { SECONDARY, langOf, linesOf, styleOf, verbRow } from './ui'
+import { switchOf, switchWords } from './switch'
 import { COMMAND, MODE, WATCH, WORDS } from './words'
 
 const turn = atom({ plugin: 'plain-view', key: 'turn' } as const, null as Turn | null)
@@ -104,6 +105,11 @@ const DEMO_STEP_MS = 3000
 let lang: Lang = 'en'
 let style: IconStyle = 'emoji'
 let isOn = false
+/** On, with the rows folding, but the card above the prompt stays away. Kept in the store. */
+let isHidden = false
+/** The `quiet` option, set in every mod by `/pad quiet`: hides what the mod draws by itself, as hide does. `show` does not undo it. */
+let isQuiet = false
+const KEY_HIDDEN = 'hidden'
 let palette: Palette = paletteOf(undefined)
 let animate = true
 let askForTasks = true
@@ -262,6 +268,13 @@ const runCommand = async ($: EngineInterface, args: string): Promise<{ text?: st
   const w = WORDS[lang]
   const [verb = '', name = ''] = args.trim().toLowerCase().split(/\s+/)
   switch (verb) {
+    case 'hide':
+    case 'show': {
+      const s = switchWords(lang, COMMAND)
+      isHidden = switchOf(verb) === 'hide'
+      await $.store.set(KEY_HIDDEN, isHidden)
+      return { text: isHidden ? s.hidden : s.shown }
+    }
     case 'on':
     case 'off': {
       const want = verb === 'on'
@@ -326,6 +339,7 @@ export const register: Register = (on, options) => {
   lang = langOf(options.language)
   style = styleOf(options.icons)
   isOn = options.enabled === true
+  isQuiet = options.quiet === true
   palette = paletteOf(options.palette)
   animate = options.animation !== false
   askForTasks = options.askForTasks !== false
@@ -340,9 +354,10 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: COMMAND,
       description: WORDS[lang].description,
-      argumentHint: '[config|on|off|demo|palette [name]|help]',
+      argumentHint: '[config|on|off|hide|show|demo|palette [name]|help]',
       immediate: true,
     })
+    isHidden = (await $.store.get(KEY_HIDDEN).catch(() => undefined)) === true
     const rows = await $.config.list().catch(() => [])
     theme = rows.find(r => r.key === 'theme')?.value ?? theme
     // A reload in the middle of a turn: the shine goes on. A demo cut by the reload ends here,
@@ -496,7 +511,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const t = await read($, turn)
-    if (!isOn && !t?.isDemo) return next(e)
+    if ((!isOn || isHidden || isQuiet) && !t?.isDemo) return next(e)
     // A demo's card shows no agents.
     const team = t?.isDemo ? [] : await read($, agents)
     const view = { mode: requestMode, isOpen: await read($, unfolded) }
@@ -593,7 +608,7 @@ export const register: Register = (on, options) => {
                 {inUse ? (
                   <Text color="success">{w.inUse}</Text>
                 ) : (
-                  <Button key={`use:${p.id}`} label={w.use} onPress={() => quietly(runCommand($, `palette ${p.id}`).then(r => $.ui.toast(r.text ?? '')))} />
+                  <Button key={`use:${p.id}`} {...SECONDARY} label={w.use} onPress={() => quietly(runCommand($, `palette ${p.id}`).then(r => $.ui.toast(r.text ?? '')))} />
                 )}
                 <Text dimColor>{p.hint[lang]}</Text>
               </Box>

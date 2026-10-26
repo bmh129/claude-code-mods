@@ -1,6 +1,11 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 const NOW = Date.parse('2026-10-09T12:00:00Z')
+
+// A5 (prototype buttons-quiet-a5-a7, variant B): the Buttons of a tree, with the props the variant lives in.
+const buttonsOf = (tree: unknown) =>
+  [...JSON.stringify(tree).matchAll(/"type":"Button","props":(\{[^{}]*\})/g)].map(m => JSON.parse(m[1]!) as { key: string; variant?: string; plain?: boolean })
+const variantOf = (tree: unknown, key: string) => buttonsOf(tree).find(b => b.key === key)?.variant
 const ON = { options: { enabled: true, language: 'pt-BR', icons: 'symbol' } }
 const TASKS = ['Escolher o estilo e o layout da página', 'Ver como a página pega o tempo ao vivo', 'Montar o painel do tempo', 'Publicar e compartilhar o link']
 
@@ -580,6 +585,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const drawn = JSON.stringify(await ui.drawn())
     expect(drawn).toContain('em uso')
     expect(drawn).toContain('use:aurora')
+    expect(variantOf(JSON.parse(drawn), 'use:aurora')).toBe('secondary')
     expect(drawn).not.toContain('use:claude')
     expect(drawn).toContain('/config → plain-view → palette')
     if (surface === 'terminal') expect(drawn).toContain('work:aurora')
@@ -1365,4 +1371,53 @@ test('askForTasks with no task tool: the line frees the checklist from terse-out
   expect(text).toContain('Each time a step finishes, before the next step\'s first tool call')
   expect(text).toContain('`- [x] <that step>` (one line is enough)')
   expect(text).toContain('exempt from any brevity or terse-output rule')
+})
+
+// /plain-view hide and show
+
+test('hide: the plan card goes away while rows still fold; show brings it back', ON, async ($, on) => {
+  engine(on)
+  mock.store(on)
+  await start($)
+  await ask($)
+  await plan($)
+  expect(await card($)).toContain('Montar o painel do tempo')
+  expect((await run($, 'hide')).text).toBe('plain-view oculto, mas ligado · /plain-view show mostra')
+  expect(await card($)).not.toContain('Montar o painel do tempo')
+  expect(await row($, 'ToolUse', toolUse('Read'))).not.toContain('Read')
+  expect((await run($, 'show')).text).toBe('plain-view visível · /plain-view hide oculta')
+  expect(await card($)).toContain('Montar o painel do tempo')
+})
+
+test('hide is kept for the next session', ON, async ($, on) => {
+  engine(on)
+  mock.store(on)
+  await start($)
+  await run($, 'hide')
+  await start($)
+  await ask($)
+  await plan($)
+  expect(await card($)).not.toContain('Montar o painel do tempo')
+})
+
+test('hide leaves the demo card alone, so the person can see what it looks like', ON, async ($, on) => {
+  engine(on)
+  mock.store(on)
+  await start($)
+  await run($, 'hide')
+  await run($, 'demo')
+  expect(await card($)).toContain('Demo:')
+})
+
+// The quiet option, set in every mod by /pad quiet: the card stays away like hide, and `show` does not undo it.
+test('quiet: the plan card goes away while rows still fold, and show does not undo it', { options: { enabled: true, language: 'pt-BR', icons: 'symbol', quiet: true } }, async ($, on) => {
+  engine(on)
+  mock.store(on)
+  await start($)
+  await ask($)
+  await plan($)
+  expect(await card($)).not.toContain('Montar o painel do tempo')
+  expect(await row($, 'ToolUse', toolUse('Read'))).not.toContain('Read')
+  await run($, 'show')
+  expect(await card($)).not.toContain('Montar o painel do tempo')
 })

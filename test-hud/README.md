@@ -29,7 +29,9 @@ The serious cousin of boss-fight: same idea, no boss.
   run goes through Bash and the pane reads it. The footer's `clear` puts `/test-hud clear`
   there too. Nothing runs until you press Enter.
 - **Commands:** `/test-hud clear` drops the runs, `/test-hud demo` adds six fake runs that go
-  from red to green, `/test-hud help` lists them.
+  from red to green, `/test-hud hide` drops the status line and the toasts but keeps counting,
+  until `/test-hud show`. `/test-hud off` and `on` turn the mod off or on in every conversation
+  (the `enabled` option). `/test-hud help` lists them.
 
 ## Options
 
@@ -37,6 +39,7 @@ In `/config`:
 
 | Option | Default | What it does |
 | --- | --- | --- |
+| `enabled` | on | Off keeps only the mod's command, which turns it back on. `/test-hud on` and `off` change it too |
 | `language` | `auto` | `pt-BR` or `en` for the pane, the status line and the toasts. `auto` follows `LANG`: Portuguese for `pt_*`, English otherwise |
 | `regressionToast` | off | A toast when a runner turns red right after a green run |
 | `keepHistory` | off | Keep the last runs per project, so the next session in the same project starts with them. Demo runs are not kept |

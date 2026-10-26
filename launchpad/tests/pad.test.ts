@@ -11,6 +11,7 @@ import {
   isWarned,
   modelsOf,
   modLabel,
+  modState,
   iconFor,
   iconOf,
   MODS,
@@ -26,6 +27,7 @@ import {
   blanksOf,
   isOptionalHint,
   placementOf,
+  quietPlan,
   unblank,
   buttonLabel,
   cells,
@@ -329,7 +331,28 @@ test('on and off: the state of a mod that toggles, from its enabled row', async 
   expect(toggleOf(PLAIN, [{ key: 'plain-view.enabled', value: true }])).toBe(true)
   expect(toggleOf(PLAIN, [{ key: 'plain-view.enabled', value: false }])).toBe(false)
   expect(toggleOf(PLAIN, [])).toBeNull()
-  expect(toggleOf(MODS[0]!, [{ key: 'limits-meter.enabled', value: true }])).toBeNull() // does not toggle
+  expect(toggleOf({ plugin: 'x', command: 'x', toggles: false }, [{ key: 'x.enabled', value: true }])).toBeNull() // does not toggle
+  expect(MODS.every(m => m.toggles)).toBe(true) // every mod has `enabled` since A1
+})
+
+test('P3: a row\'s state: off from the enabled option, hidden from the eye, unknown with no option row', async () => {
+  const rows = (v: boolean) => [{ key: 'limits-meter.enabled', value: v }]
+  const lm = MODS[0]!
+  expect(modState(lm, rows(true), [])).toBe('on')
+  expect(modState(lm, rows(true), ['limits-meter'])).toBe('hidden')
+  expect(modState(lm, rows(false), ['limits-meter'])).toBe('off') // off wins over hidden
+  expect(modState(lm, [], [])).toBe('unknown')
+  expect(modState({ plugin: 'x', command: 'x', toggles: false }, rows(true), [])).toBe('unknown')
+})
+
+test('P3 and P1: every collection mod has a description and every /pad verb a label, in both languages', async () => {
+  for (const l of ['pt-BR', 'en'] as const) {
+    for (const m of MODS) expect(WORDS[l].switchboard.mods[m.plugin]).toBeTruthy()
+    for (const v of ['configuration', 'list', 'add', 'remove', 'reset', 'place', 'hide', 'show', 'help']) expect(WORDS[l].verbs[v]).toBeTruthy()
+  }
+  // the label follows the language and no Portuguese screen shows the English verb
+  expect(WORDS['pt-BR'].verbs.configuration).toBe('configurar')
+  expect(WORDS.en.verbs.configuration).toBe('configure')
 })
 
 test('model chips: the plain aliases of the /config row, else haiku, sonnet, opus', async () => {
@@ -388,4 +411,13 @@ test('the dialog for reset says what each answer does; anyone else\'s question i
   expect(dressQuestion(theirs, 'pt-BR')).toBe(theirs)
   const unknown = dressQuestion({ header: ASK_HEADER, options: [{ label: 'outra coisa' }] }, 'pt-BR')
   expect(unknown.options).toEqual([{ label: 'outra coisa' }])
+})
+
+test('quietPlan: the quiet rows in the collection, the launchpad last; a mod with options but no quiet row is old', () => {
+  const rows = ['launchpad.quiet', 'limits-meter.quiet', 'agent-watch.quiet', 'test-hud.quiet', 'plain-view.enabled', 'other.quiet', 'allowlist-coach.enabled', 'allowlist-coach.quiet'].map(key => ({ key }))
+  expect(quietPlan(rows)).toEqual({
+    keys: ['limits-meter.quiet', 'allowlist-coach.quiet', 'agent-watch.quiet', 'test-hud.quiet', 'launchpad.quiet'],
+    old: ['plain-view'],
+  })
+  expect(quietPlan([])).toEqual({ keys: [], old: [] })
 })

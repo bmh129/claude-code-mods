@@ -1,6 +1,6 @@
 import type { Configured, Entry, Tab } from '../types'
 import type { Lang } from './ui'
-import { clip } from './ui'
+import { barOf, clip } from './ui'
 import { WORDS } from './words'
 
 /** Approvals, with no refusal, before the coach offers a rule: the default of the `threshold` option. */
@@ -178,10 +178,10 @@ export const setState = (entries: Record<string, Entry>, key: string, state: Ent
 export const zero = (entries: Record<string, Entry>, key: string) =>
   entries[key] ? { ...entries, [key]: { ...entries[key]!, approved: 0, denied: 0, state: 'counting' as const } } : entries
 
-/** Approvals toward the offer: `●●●○○ 3/5`. */
+/** Approvals toward the offer: `███░░ 3/5`. */
 export const progress = (approved: number) => {
   const done = Math.max(0, Math.min(threshold, approved))
-  return `${'●'.repeat(done)}${'○'.repeat(threshold - done)} ${done}/${threshold}`
+  return `${barOf(done, threshold)} ${done}/${threshold}`
 }
 
 /** The line shown under an open dialog, or undefined when there is nothing to say yet. */

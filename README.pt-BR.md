@@ -34,6 +34,12 @@ Requer Claude Code 2.1.287 ou mais recente.
 As imagens abaixo vêm da saída real de cada mod: `scripts/screenshots/run.sh` roda o mod com
 dados de exemplo via `claude plugin test` e renderiza o que ele desenhou.
 
+Todo mod responde às mesmas quatro palavras, além dos comandos próprios: `/x on` e `/x off` ligam e
+desligam o mod em todas as conversas (a opção `enabled`, a mesma do `/config`; desligado, só o
+comando continua, para o `/x on` trazer o mod de volta), e `/x hide` e `/x show` mantêm o mod ligado
+mas tiram o que ele desenha sozinho (a faixa, os toasts, a linha de status, o cartão). O painel e o
+comando continuam abrindo. `/x help` lista o resto. O `hide` de um mod vale também nas próximas sessões.
+
 ### limits-meter
 
 A faixa aparece sozinha depois da primeira resposta. Comandos:
@@ -42,6 +48,7 @@ A faixa aparece sozinha depois da primeira resposta. Comandos:
 /limits          abre o painel: janelas do plano, contexto em tokens, os últimos 20 turnos
 /limits hide     esconde a faixa acima do prompt, também nas próximas sessões
 /limits show     traz a faixa de volta
+/limits off | on  desliga ou liga o mod em todas as conversas
 /limits keep-warm on|off  mantém o cache do prompt quente (pergunta antes, gasta plano)
 /limits warn N   avisa na troca cara com a janela de 5h a partir de N% (padrão 70)
 /limits help     lista os comandos
@@ -69,6 +76,10 @@ painel lista cada categoria e cada servidor MCP.
 
 ![limits-meter: faixa acima do prompt, o painel /limits e seus toasts](screenshots/limits-meter.svg)
 
+**O relógio do cache e o keep warm** ([mp4](screenshots/limits-meter-cache.mp4)): a contagem regressiva depois de uma resposta, a barra de contexto por grupo, o painel `/limits` e o keep warm avisando antes de o cache esfriar. Desenhado a partir da saída real do mod por `scripts/screenshots/limits-meter-demo.sh`.
+
+![limits-meter: a contagem do cache, a barra de contexto por grupo, o painel /limits e o keep warm](screenshots/limits-meter-cache.gif)
+
 #### Instalação
 
 ```
@@ -88,6 +99,9 @@ Ele conta sozinho cada vez que você responde a um diálogo de permissão. Coman
 /allowlist remove 1    tira a regra 1 de allow, quando foi o coach que a adicionou (pergunta antes)
 /allowlist reset 2     zera a contagem da regra 2 (pergunta antes)
 /allowlist reset       apaga as contagens deste projeto (pergunta antes)
+/allowlist hide        segue contando, sem toast nem nota no diálogo
+/allowlist show        traz os avisos de volta
+/allowlist off | on    desliga ou liga o mod em todas as conversas
 /allowlist help        lista os comandos
 ```
 
@@ -114,6 +128,9 @@ A status line e os toasts aparecem sozinhos enquanto subagentes rodam. Comandos:
 /watch clear        remove agentes terminados e de demo
 /watch clear done   remove só os agentes terminados
 /watch clear demo   remove só os agentes de demo
+/watch hide         segue acompanhando, sem toast nem linha de status
+/watch show         traz os avisos de volta
+/watch off | on     desliga ou liga o mod em todas as conversas
 /watch help         lista os comandos
 ```
 
@@ -140,6 +157,9 @@ A status line e o toast aparecem sozinhos cada vez que um test runner roda no Ba
                     testes corrigidos, sparkline, últimas 10 execuções
 /test-hud demo      adiciona seis execuções falsas que vão de vermelho a verde
 /test-hud clear     remove as execuções
+/test-hud hide      segue contando, sem linha de status nem toast
+/test-hud show      traz os avisos de volta
+/test-hud off | on  desliga ou liga o mod em todas as conversas
 /test-hud help      lista os comandos
 ```
 
@@ -163,8 +183,9 @@ Ou para uma sessão, a partir de um clone: `claude --plugin-dir ./test-hud`.
 O menu aparece sozinho quando uma sessão começa e depois de `/clear`, até o primeiro prompt.
 `◆ pad`, sob a linha de dica abaixo do prompt, abre o painel de controle: o modelo e o
 esforço da sessão como botões (um clique roda `/model` ou `/effort`; `opus` e `max` ficam
-amarelos quando a janela de 5h passa de 70%), um botão para cada mod desta coleção instalado,
-pelo nome, e os atalhos. Comandos:
+amarelos quando a janela de 5h passa de 70%), e duas abas: Mods, um switchboard com toggle
+(`/x on` e `off`) e olho (`/x hide` e `show`) para cada mod desta coleção, e os atalhos. Os
+rótulos seguem a opção `language`. Comandos:
 
 ```
 /pad                                        mostra o menu de novo
@@ -175,7 +196,9 @@ pelo nome, e os atalhos. Comandos:
 /pad remove 3                               remove o botão 3
 /pad reset                                  volta aos botões padrão
 /pad place header | prompt | pane           onde o menu aparece: sob o cabeçalho, logo acima do prompt ou num painel
-/pad off | on                               desliga o menu ou liga de novo
+/pad hide | show                            esconde o menu ou mostra de novo
+/pad off | on                               desliga ou liga o launchpad em todas as conversas
+/pad quiet [on | off]                       modo discreto: nenhum mod desenha nada sozinho; um chip na linha de dica traz tudo de volta
 ```
 
 ![launchpad: o menu de boas-vindas sob o cabeçalho, a linha acima do prompt, o ◆ pad e o painel de controle](screenshots/launchpad.svg)
@@ -224,6 +247,7 @@ Três opções mudam o que você vê, todas em `/config`:
 ```
 /plain-view                   o painel de configuração: as opções em três abas, um clique cada
 /plain-view on | off          mostra ou esconde o cartão e as linhas de tool
+/plain-view hide | show       mantém as linhas recolhidas, sem o cartão acima do prompt
 /plain-view demo              um plano de exemplo no cartão por 12 segundos
 /plain-view palette           as 8 paletas das barras com amostra, e um botão para trocar
 /plain-view palette aurora    troca para uma pelo nome
@@ -287,11 +311,11 @@ se conecta e cada chamada que faz.
 
 | Mod | Rede | Roda processos | Arquivos | Chama um modelo | Envia dados para algum lugar |
 | --- | --- | --- | --- | --- | --- |
-| limits-meter | Não | Não | Não | Só se você ligar o manter-quente: uma mensagem curta por volta do cache, até o seu próximo prompt ou 2 horas | Não |
-| allowlist-coach | Não | Não | Lê e grava `.claude/settings.local.json`, ou `.claude/settings.json` quando você escolhe, depois da sua confirmação | Não | Não |
-| agent-watch | Não | Não | Não | Não | Não |
-| test-hud | Não | Não | Lê a cópia salva pelo Bash de uma saída longa demais para mostrar inteira | Não | Não |
-| launchpad | Não | Não | Lê `.claude/launchpad.json` e os arquivos de agente em `.claude/agents/`, no projeto e na sua pasta home | Não | Não |
+| limits-meter | Não | Não | Não (`on` e `off` gravam a própria opção pelo `/config`) | Só se você ligar o manter-quente: uma mensagem curta por volta do cache, até o seu próximo prompt ou 2 horas | Não |
+| allowlist-coach | Não | Não | Lê e grava `.claude/settings.local.json`, ou `.claude/settings.json` quando você escolhe, depois da sua confirmação. `on` e `off` gravam a própria opção pelo `/config` | Não | Não |
+| agent-watch | Não | Não | Não (`on` e `off` gravam a própria opção pelo `/config`) | Não | Não |
+| test-hud | Não | Não | Lê a cópia salva pelo Bash de uma saída longa demais para mostrar inteira. `on` e `off` gravam a própria opção pelo `/config` | Não | Não |
+| launchpad | Não | Não | Lê `.claude/launchpad.json` e os arquivos de agente em `.claude/agents/`, no projeto e na sua pasta home. `on` e `off` gravam a própria opção pelo `/config` | Não | Não |
 | plain-view | Não | Não | Não (grava as próprias opções pelo `/config` quando você roda `on`, `off` ou `palette`, ou clica numa delas no painel de configuração) | Não | Não |
 
 ## Desenvolvimento
