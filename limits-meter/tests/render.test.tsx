@@ -991,3 +991,22 @@ test('off: no band and no toast, but the command still answers', { options: { en
   expect((await run($, 'off')).text).toBe('limits is already off.')
   expect((await run($, 'on')).text).toBe('limits on · /limits off turns it off')
 })
+
+// The quiet option, set in every mod by /pad quiet: no band, but from 95% of the 5h window one alert line.
+test('quiet: no band, one alert line from 95% of the 5h window, and show does not undo it', { options: { quiet: true } }, async ($, on) => {
+  engine(on)
+  await start($)
+  await $.session.measure(MEASURE as never)
+  const calm = await band($)
+  expect(JSON.stringify(await calm.drawn())).not.toContain('64%')
+  await calm.unmount()
+
+  await run($, 'show')
+  await $.session.measure({ ...MEASURE, rateLimits: [{ kind: 'five_hour', percentUsed: 96, resetsAt: '2026-10-08T13:12:00Z' }, LIMITS[1]] } as never)
+  const hot = await band($)
+  const drawn = JSON.stringify(await hot.drawn())
+  expect(drawn).toContain('96%')
+  expect(drawn).not.toContain('"key":"details"')
+  expect(drawn).not.toContain('31%')
+  await hot.unmount()
+})

@@ -307,3 +307,15 @@ test('a refused option says why', async ($, on) => {
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
   expect((await $.command.run({ ...RUN, args: 'off' } as never)).text).toBe('Could not change the option: managed by policy')
 })
+
+// The quiet option, set in every mod by /pad quiet: silent like hide, and `show` does not undo it.
+test('quiet: no toast from the demo stall, and show does not undo it', { options: { quiet: true } }, async ($, on) => {
+  const w = switchWorld(on)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  await $.command.run({ ...RUN, args: 'demo' } as never)
+  expect(w.toasts).toEqual([])
+  expect((await $.command.run({ ...RUN, args: 'show' } as never)).text).toBe('watch shown · /watch hide hides it')
+  await $.command.run({ ...RUN, args: 'clear demo' } as never)
+  await $.command.run({ ...RUN, args: 'demo' } as never)
+  expect(w.toasts).toEqual([])
+})

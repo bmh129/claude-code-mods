@@ -71,6 +71,7 @@ session's model and effort in one click, this collection's mods, and the shortcu
 /pad hide                             hide the menu: no card at the start, after /clear or on /pad
 /pad show                             show it again
 /pad off | on                         turn the launchpad itself off or on in every conversation
+/pad quiet [on | off]                 quiet mode: sets every mod's `quiet` option; bare, it flips it
 ```
 
 `/pad configuration` (or `/pad config`) opens a pane with your buttons, each with `↑`, `↓` and
@@ -88,6 +89,15 @@ pane says the menu is full until you remove one.
 other commands and the pane go on working, so you can set the menu up before `/pad show`. (Before
 0.6.0 this was `/pad off`; a menu hidden that way stays hidden.) The
 `showOnStart` option below only stops the card at the start and after `/clear`.
+
+`/pad quiet` sets the `quiet` option of every mod of this collection at once (limits-meter,
+allowlist-coach, agent-watch, plain-view, test-hud and the launchpad). A quiet mod draws nothing by
+itself, as `hide` does, and keeps its command and pane; `/x show` does not undo it. Errors,
+permission requests and the agent's questions are never hidden, and limits-meter still draws one
+line from 95% of the 5-hour window. In quiet, the hint line keeps only `◦ quiet · show`; pressing
+`show`, or `/pad quiet off`, brings everything back. A mod installed before this version has no
+`quiet` option: the answer names it, and updating it fixes that. Each change reloads the mods, so
+the first draw after it takes a moment.
 
 The icon in `/pad add` is optional. It can be any emoji or symbol, or a built-in name between
 colons (`/pad add :chart: Vendas | /cost`): `folder`, `doc`, `pen`, `search`, `compress`, `gauge`,

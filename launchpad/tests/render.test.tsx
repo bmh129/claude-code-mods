@@ -867,3 +867,86 @@ test('show brings back a menu that hide took away', async ($, on) => {
   expect((await pad($, 'show')).text).toBe('Menu de atalhos do launchpad.')
   expect((await pad($, '')).text).toBe('Menu de atalhos do launchpad.')
 })
+
+// /pad quiet: every mod's `quiet` option at once, and the chip on the hint line (prototype buttons-quiet-a5-a7, A7 variant A).
+const QUIET_ROWS = ['limits-meter', 'allowlist-coach', 'agent-watch', 'test-hud', 'launchpad'].map(p => ({ key: `${p}.quiet`, value: false }))
+const recordSets = (on: On, deny = '') => {
+  const sets: { key: string; value: unknown }[] = []
+  on('config.set', (_$: any, e: any) => (deny ? ({ deny } as never) : (sets.push({ key: e.key, value: e.value }), { value: e.value } as never)))
+  return sets
+}
+
+test('/pad quiet on and off set every mod\'s quiet option, the launchpad last; bare flips it', async ($, on) => {
+  world(on, {}, undefined, undefined, undefined, { rows: QUIET_ROWS })
+  const sets = recordSets(on)
+  await start($)
+  expect((await pad($, 'quiet off')).text).toBe('discreto já está desligado.')
+  expect((await pad($, 'quiet on')).text).toBe('discreto ligado em 5 mods: nada aparece sozinho · /pad quiet off volta')
+  expect(sets.map(s => s.key)).toEqual(['limits-meter.quiet', 'allowlist-coach.quiet', 'agent-watch.quiet', 'test-hud.quiet', 'launchpad.quiet'])
+  expect(sets.every(s => s.value === true)).toBe(true)
+  sets.length = 0
+  expect((await pad($, 'quiet')).text).toBe('discreto ligado em 5 mods: nada aparece sozinho · /pad quiet off volta')
+  expect((await pad($, 'quiet maybe')).text).toContain('/pad quiet on | off')
+})
+
+test('/pad quiet names a mod that has options but no quiet row, and says why a refusal failed', async ($, on) => {
+  world(on, {}, undefined, undefined, undefined, { rows: [...QUIET_ROWS.slice(0, 2), { key: 'plain-view.enabled', value: true }, { key: 'launchpad.quiet', value: false }] })
+  const sets = recordSets(on)
+  await start($)
+  expect((await pad($, 'quiet on')).text).toBe('discreto ligado em 3 mods: nada aparece sozinho · /pad quiet off volta Sem a opção quiet (atualize): plain-view.')
+  expect(sets.map(s => s.key)).toEqual(['limits-meter.quiet', 'allowlist-coach.quiet', 'launchpad.quiet'])
+})
+
+test('/pad quiet with no mod that has the option, and a refused change', async ($, on) => {
+  const w = world(on, {}, undefined, undefined, undefined, { rows: [] })
+  recordSets(on)
+  await start($)
+  expect((await pad($, 'quiet on')).text).toBe('Nenhum mod com a opção quiet. Atualize os mods da coleção.')
+  expect(w.commands).toEqual([])
+})
+
+test('/pad quiet: a refusal says why', async ($, on) => {
+  world(on, {}, undefined, undefined, undefined, { rows: QUIET_ROWS })
+  recordSets(on, 'managed by policy')
+  await start($)
+  expect((await pad($, 'quiet on')).text).toBe('Não deu para mudar a opção: managed by policy')
+})
+
+for (const surface of ['terminal', 'desktop']) {
+  test(`calm: the hint line has ◆ pad and a ◦ discreto chip that turns quiet on, on ${surface}`, async ($, on) => {
+    world(on, {}, undefined, undefined, undefined, { rows: QUIET_ROWS })
+    const sets = recordSets(on)
+    await start($, surface)
+    const ui = await hint($, surface)
+    const drawn = JSON.stringify(await ui.drawn())
+    expect(drawn).toContain('pad:panel')
+    expect(drawn).toContain('◦ discreto')
+    await ui.press({ key: 'quiet:on' })
+    expect(sets.map(s => s.key)).toContain('launchpad.quiet')
+    expect(sets.every(s => s.value === true)).toBe(true)
+    await ui.unmount()
+  })
+
+  test(`quiet: only ◦ discreto · mostrar remains on the hint line, and it turns quiet off, on ${surface}`, { options: { quiet: true } }, async ($, on) => {
+    const w = world(on, {}, undefined, undefined, undefined, { rows: QUIET_ROWS })
+    const sets = recordSets(on)
+    await start($, surface)
+    const ui = await hint($, surface)
+    const drawn = JSON.stringify(await ui.drawn())
+    expect(drawn).not.toContain('pad:panel')
+    expect(drawn).toContain('◦ discreto · ')
+    expect(drawn).toContain('mostrar')
+    await ui.press({ key: 'quiet:off' })
+    expect(sets.every(s => s.value === false)).toBe(true)
+    expect(sets.at(-1)?.key).toBe('launchpad.quiet')
+    expect(w.toasts.at(-1)).toContain('discreto desligado em 5 mods')
+    await ui.unmount()
+  })
+}
+
+test('quiet: no menu at the start and /pad show says it is still quiet', { options: { quiet: true } }, async ($, on) => {
+  const w = world(on)
+  await start($)
+  expect(w.logs).toEqual([])
+  expect((await pad($, 'show')).text).toBe('O launchpad está discreto. /pad quiet off mostra de novo.')
+})

@@ -194,6 +194,7 @@ name, and the shortcuts. Commands:
 /pad place header | prompt | pane           where the menu shows: under the header, right above the prompt, or in a pane
 /pad hide | show                            hide the menu or show it again
 /pad off | on                               turn the launchpad off or back on in every conversation
+/pad quiet [on | off]                       quiet mode: no mod draws anything by itself; a chip on the hint line brings it back
 ```
 
 ![launchpad: the welcome menu under the header, the row above the prompt, ◆ pad and the control panel](screenshots/launchpad.svg)

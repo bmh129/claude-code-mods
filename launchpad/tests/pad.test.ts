@@ -26,6 +26,7 @@ import {
   blanksOf,
   isOptionalHint,
   placementOf,
+  quietPlan,
   unblank,
   buttonLabel,
   cells,
@@ -388,4 +389,13 @@ test('the dialog for reset says what each answer does; anyone else\'s question i
   expect(dressQuestion(theirs, 'pt-BR')).toBe(theirs)
   const unknown = dressQuestion({ header: ASK_HEADER, options: [{ label: 'outra coisa' }] }, 'pt-BR')
   expect(unknown.options).toEqual([{ label: 'outra coisa' }])
+})
+
+test('quietPlan: the quiet rows in the collection, the launchpad last; a mod with options but no quiet row is old', () => {
+  const rows = ['launchpad.quiet', 'limits-meter.quiet', 'agent-watch.quiet', 'test-hud.quiet', 'plain-view.enabled', 'other.quiet', 'allowlist-coach.enabled', 'allowlist-coach.quiet'].map(key => ({ key }))
+  expect(quietPlan(rows)).toEqual({
+    keys: ['limits-meter.quiet', 'allowlist-coach.quiet', 'agent-watch.quiet', 'test-hud.quiet', 'launchpad.quiet'],
+    old: ['plain-view'],
+  })
+  expect(quietPlan([])).toEqual({ keys: [], old: [] })
 })

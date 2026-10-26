@@ -1,6 +1,6 @@
 {
   "name": "launchpad",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "A menu of one-click actions under the header, above the prompt or in a pane, and a control panel from ◆ pad: model and effort in one click, this collection's mods, the shortcuts. Pick and order up to 8 with /pad configuration",
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -9,6 +9,12 @@
       "title": "On",
       "description": "Show the welcome menu and the panel. Off keeps only the /pad command, which turns it back on. /pad on and off change it too; /pad hide keeps it on but takes the menu away",
       "default": true
+    },
+    "quiet": {
+      "type": "boolean",
+      "title": "Quiet",
+      "description": "Draw nothing by itself, as hide does, and keep the command and the pane. /pad quiet on and off set it in every mod at once. Errors, permission requests and the agent's questions are never hidden",
+      "default": false
     },
     "language": {
       "type": "string",

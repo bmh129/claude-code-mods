@@ -73,6 +73,7 @@ import {
   parseAdd,
   parseProject,
   placementOf,
+  quietPlan,
   sameText,
   shownOf,
   spell,
@@ -167,7 +168,7 @@ async function load($: EngineInterface, fresh = false) {
   const stored = asPads(await $.store.get(KEY_MENU).catch(() => undefined))
   const raw = cwd ? await $.fs.read(`${cwd}/${PROJECT_FILE}`).catch(() => null) : null
   await update($, menu, () => (stored ? localize(stored, lang) : defaults(lang)))
-  const off = (await $.store.get(KEY_OFF).catch(() => undefined)) === true
+  const off = (await $.store.get(KEY_OFF).catch(() => undefined)) === true || isQuiet
   await update($, isOff, () => off)
   const place = await $.store.get(KEY_PLACE).catch(() => undefined)
   await update($, placement, () => (typeof place === 'string' ? placementOf(place) : placeOption))
@@ -464,6 +465,27 @@ async function choose($: EngineInterface, command: 'model' | 'effort', value: st
   }
 }
 
+/** The `quiet` option, from the last load: the menu stays away and the chip on the hint line reads `show`. */
+let isQuiet = false
+
+/** /pad quiet [on|off]: sets the `quiet` option of every mod that has one; bare, it flips the state. */
+async function runQuiet($: EngineInterface, args: string): Promise<{ text?: string }> {
+  const w = WORDS[lang].quiet
+  const word = args.trim().toLowerCase().split(/\s+/)[0] ?? ''
+  if (word !== '' && word !== 'on' && word !== 'off' && word !== 'toggle') return { text: WORDS[lang].help }
+  const want = word === 'on' ? true : word === 'off' ? false : !isQuiet
+  if ((word === 'on' || word === 'off') && want === isQuiet) return { text: w.already(want) }
+  const { keys, old } = quietPlan(await $.config.list().catch(() => []))
+  if (keys.length === 0) return { text: w.none }
+  let denied: string | null = null
+  for (const key of keys) {
+    const result = await $.config.set({ key, value: want } as never)
+    if (result && 'deny' in result && result.deny !== undefined) denied ??= String(result.deny)
+  }
+  const note = old.length > 0 ? ` ${w.old(old.join(', '))}` : ''
+  return { text: (denied ? w.denied(denied) : want ? w.on(keys.length) : w.off(keys.length)) + note }
+}
+
 /** A mod's button or switch: its command, as if typed. */
 async function runMod($: EngineInterface, m: ModInfo, args = '') {
   try {
@@ -484,6 +506,7 @@ async function runPad($: EngineInterface, args: string): Promise<{ text?: string
     case 'show': {
       await load($)
       // show also brings back a menu that hide took away.
+      if (verb.toLowerCase() === 'show' && isQuiet) return { text: w.quiet.stillQuiet }
       if (verb.toLowerCase() === 'show' && (await read($, isOff))) {
         await $.store.set(KEY_OFF, false)
         await update($, isOff, () => false)
@@ -517,6 +540,10 @@ async function runPad($: EngineInterface, args: string): Promise<{ text?: string
       await update($, isOff, () => true)
       return { text: w.off }
     }
+
+    // Every mod of the collection at once: their `quiet` option, the launchpad's last. A reload applies each.
+    case 'quiet':
+      return runQuiet($, arg)
 
     // The mod itself, in every conversation: the `enabled` option, which a reload applies.
     case 'off':
@@ -587,6 +614,7 @@ export const register: Register = (on, options) => {
   style = styleOf(options.icons)
   const showOnStart = options.showOnStart !== false
   isEnabled = options.enabled !== false
+  isQuiet = options.quiet === true
   placeOption = placementOf(options.placement)
   let w = WORDS[lang]
 
@@ -600,9 +628,9 @@ export const register: Register = (on, options) => {
       name: 'pad',
       description:
         lang === 'en'
-          ? 'Shortcuts: /pad shows them; configuration, list, add, remove, reset, place, hide, show, off, on'
-          : 'Atalhos: /pad mostra; configuration, list, add, remove, reset, place, hide, show, off, on',
-      argumentHint: '[configuration|list|add|remove|reset|place|hide|show|off|on]',
+          ? 'Shortcuts: /pad shows them; configuration, list, add, remove, reset, place, hide, show, quiet, off, on'
+          : 'Atalhos: /pad mostra; configuration, list, add, remove, reset, place, hide, show, quiet, off, on',
+      argumentHint: '[configuration|list|add|remove|reset|place|hide|show|quiet|off|on]',
     })
     if (!isEnabled) return result
     await load($, true)
@@ -687,11 +715,25 @@ export const register: Register = (on, options) => {
   // too (the panel's /pad row turns it back on). The engine's hint stays as it draws it, above.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const theirs = await next(e)
-    const { Box } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const q = w.quiet
+    const flip = (to: 'on' | 'off') => () => void runQuiet($, to).then(r => $.ui.toast(r.text ?? ''), () => $.ui.toast(w.failed(`/pad quiet ${to}`)))
+    // The one touch: quiet's chip sits by `◆ pad`, and in quiet it is all the launchpad draws.
+    const chip = isQuiet ? (
+      <Box key="quiet" flexDirection="row">
+        <Text dimColor>{`${q.chip} · `}</Text>
+        <Button key="quiet:off" plain dimColor label={q.chipBack} onPress={flip('off')} />
+      </Box>
+    ) : (
+      <Button key="quiet:on" plain dimColor label={q.chip} onPress={flip('on')} />
+    )
     return (
       <Box flexDirection="column" alignItems="flex-start">
         {theirs}
-        {control($, e, 'pad:panel', w.panel.entry, () => openPanel($))}
+        <Box flexDirection="row" alignItems="center" gap={1}>
+          {!isQuiet && control($, e, 'pad:panel', w.panel.entry, () => openPanel($))}
+          {chip}
+        </Box>
       </Box>
     )
   })

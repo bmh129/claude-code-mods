@@ -49,6 +49,10 @@ const EMPTY: Snapshot = { limits: [], contextPercent: null, contextTokens: null,
 const snapshot = atom({ plugin: 'limits-meter', key: 'snapshot' } as const, EMPTY)
 const turns = atom({ plugin: 'limits-meter', key: 'turns' } as const, [] as Turn[])
 const isHidden = atom({ plugin: 'limits-meter', key: 'isHidden' } as const, false)
+/** The `quiet` option, set in every mod by `/pad quiet`: hides what the mod draws by itself, as hide does. `show` does not undo it. */
+let isQuiet = false
+/** From this share of the 5h window quiet still draws one line: the limit is about to stop the work. */
+const QUIET_ALERT_AT = 95
 const fired = atom({ plugin: 'limits-meter', key: 'fired' } as const, [] as string[])
 const samples = atom({ plugin: 'limits-meter', key: 'samples' } as const, {} as Samples)
 const model = atom({ plugin: 'limits-meter', key: 'model' } as const, null as string | null)
@@ -374,6 +378,7 @@ export const register: Register = (on, options) => {
   format = options.format === 'compact' ? 'compact' : 'full'
   style = styleOf(options.icons)
   isOn = options.enabled !== false
+  isQuiet = options.quiet === true
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -500,6 +505,14 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || (await read($, isHidden))) return next(e)
     const s = await read($, snapshot)
+    if (isQuiet) {
+      const five = s.limits.find(l => l.kind === 'five_hour')
+      if (!five || five.percent < QUIET_ALERT_AT) return next(e)
+      const { Box, Text } = $.ui.resolve(e)
+      const line = <Text key="quiet-alert" color="error" bold>{`! ${WORDS[lang].windowAlert(label(five.kind, lang), pct(five.percent), resetIn(five.resetsAt, await $.clock.now(), lang))}`}</Text>
+      const theirs = await next(e)
+      return theirs ? <Box key="quiet" flexDirection="column">{theirs}{line}</Box> : line
+    }
     if (s.limits.length === 0 && s.contextPercent === null) return next(e)
 
     const { Box, Text, Button } = $.ui.resolve(e)
