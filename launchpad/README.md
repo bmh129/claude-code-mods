@@ -48,7 +48,8 @@ session's model and effort in one click, this collection's mods, and the shortcu
     press still switches at once.
   - **Mods** tab, a switchboard: one row per mod of this collection installed, named as the plugin
     in every language (`⏳ limits-meter`, `🔐 allowlist-coach`, `👀 agent-watch`, `📜 plain-view`),
-    with a line on what it does and its command. The name opens the mod's pane. The **toggle**
+    with a line on what it does and its command. State is color: `on` green, `off` dim, a hidden
+    eye amber, the open tab in the accent, the footer verbs in the action color. The name opens the mod's pane. The **toggle**
     (`[ ● on ]` on the terminal, a green block on Claude Code desktop) runs `/x off` or `/x on`: off
     in every conversation, read from the mod's `enabled` option. The **eye** (`◉`, `◌` when
     hidden) runs `/x hide` or `/x show`: the mod stays on but out of sight. A mod that is off has no
@@ -58,6 +59,11 @@ session's model and effort in one click, this collection's mods, and the shortcu
     `◦ quiet` toggle runs `/pad quiet`, the same as the chip on the hint line; then each mod missing, which
     puts its `/plugin install` command in the prompt, and the rules: off means off in every chat,
     hidden keeps it on but out of sight. test-hud is left out: it is a tool for developers.
+  - **Hover:** a boxed button fills with the accent under the pointer, its label inverted, as the
+    menu tiles do. On the terminal that is the shortcuts and `Fechar`; the model and effort controls are
+    plain text there and boxes with the fill on Claude Code desktop. A link (no brackets: the tabs, the
+    footer verbs, a mod's name, the controls on the terminal) only underlines under the pointer. Toggles, the eye, tabs and the footer verbs have none. A desktop
+    may keep its native hover if it ignores the color.
   - **Shortcuts** tab: the menu's buttons in one line each, less `Trocar modelo`, which the controls replace.
   The labels of the `/pad` row follow the `language` option (`configurar · listar · …` or
   `configure · list · …`); the button runs the English argument, which is also what you type.

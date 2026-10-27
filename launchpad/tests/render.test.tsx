@@ -598,15 +598,16 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
-test('P2: the chips, the shortcuts and the close button are one-line secondary buttons, no tile', async ($, on) => {
+test('P2: the shortcuts and close are one-line secondary buttons, the chips plain text on the terminal and boxes on desktop, no tile', async ($, on) => {
   world(on, files, undefined, [...COMMANDS, ...CONTROLS])
   await start($)
   await step($, 'claude-opus-5-5', 'high')
   const ui = await panel($)
   let tree = await ui.drawn()
   let drawn = JSON.stringify(tree)
-  expect(variantOf(tree, 'model:sonnet')).toBe('secondary')
-  expect(variantOf(tree, 'effort:low')).toBe('secondary')
+  expect(variantOf(tree, 'model:sonnet')).toBeUndefined() // terminal: plain text, no brackets
+  expect(button(tree, 'model:sonnet')?.props?.plain).toBe(true)
+  expect(button(tree, 'effort:low')?.props?.plain).toBe(true)
   expect(variantOf(tree, 'close')).toBe('secondary')
   expect(drawn).toContain('"label":"○ sonnet"')
   expect(drawn).not.toContain('borderStyle') // the 3-line tile is gone from the panel
@@ -1097,3 +1098,199 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.unmount()
   })
 }
+
+// r5 and r6 (prototype launchpad-0.9.0, B and D): the colors of state and the filled hover on boxed buttons.
+type Node = { type?: string; props?: Record<string, any>; hover?: Record<string, any>; children?: unknown[] }
+const nodes = (tree: unknown, type: string, out: Node[] = []): Node[] => {
+  if (Array.isArray(tree)) tree.forEach(t => nodes(t, type, out))
+  else if (tree && typeof tree === 'object') {
+    if ((tree as Node).type === type) out.push(tree as Node)
+    Object.values(tree).forEach(v => nodes(v, type, out))
+  }
+  return out
+}
+const button = (tree: unknown, key: string) => nodes(tree, 'Button').find(b => b.props?.key === key)
+const hasHover = (tree: unknown, key: string) => button(tree, key)?.hover !== undefined
+const textColor = (tree: unknown, key: string) => (nodes(button(tree, key), 'Text')[0]?.props ?? {}).color
+
+test('hover: the fill is on boxed buttons only, links get an underline and nothing else, toggles and the eye none', async ($, on) => {
+  sbWorld(on)
+  await start($)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await panel($, surface)
+    let tree = await ui.drawn()
+    // never on a toggle, the eye (icon only) or the quiet toggle
+    for (const k of ['toggle:limits-meter', 'toggle:agent-watch', 'toggle:quiet', 'eye:limits-meter']) expect(hasHover(tree, k)).toBe(false)
+    // a link (no brackets: tabs, footer verbs, the mod's name) only underlines, and asks not to be inverted
+    for (const k of ['tab:shortcuts', 'cmd:configuration', 'cmd:help', 'mod:limits-meter']) expect(button(tree, k)?.hover).toEqual({ scope: `hover:${k}`, underline: true, inverse: false })
+    expect(hasHover(tree, 'close')).toBe(true)
+    // the controls: a box with the fill on the desktop, a link on the terminal
+    for (const k of ['model:sonnet', 'effort:low']) {
+      expect(button(tree, k)?.hover).toEqual(surface === 'desktop' ? { scope: `hover:${k}`, backgroundColor: 'claude', color: 'inverseText' } : { scope: `hover:${k}`, underline: true, inverse: false })
+    }
+    // the fill: the accent behind the label, the inverse color on it, a scope of its own so no keyed Box is needed
+    expect(button(tree, 'close')?.hover).toEqual({ scope: 'hover:close', backgroundColor: 'claude', color: 'inverseText' })
+    await ui.press({ key: 'tab:shortcuts' })
+    tree = await ui.drawn()
+    for (const k of ['pad:compact', 'pad:context']) expect(button(tree, k)?.hover).toEqual({ scope: `hover:${k}`, backgroundColor: 'claude', color: 'inverseText' })
+    await ui.press({ key: 'tab:mods' })
+    await ui.unmount()
+  }
+})
+
+test('state color: on is green and off is dim in the label, the hidden eye is amber, the open tab is the accent', async ($, on) => {
+  sbWorld(on)
+  await start($)
+  const ui = await panel($)
+  let tree = await ui.drawn()
+  expect(textColor(tree, 'toggle:limits-meter')).toBe('success')
+  expect(textColor(tree, 'toggle:agent-watch')).toBe('inactive')
+  expect(textColor(tree, 'toggle:quiet')).toBe('inactive')
+  expect(textColor(tree, 'eye:limits-meter')).toBeUndefined()
+  expect(nodes(tree, 'Text').some(t => t.props?.color === 'claude' && t.children?.[0] === 'Mods')).toBe(true) // the open tab
+  expect(nodes(tree, 'Text').some(t => t.props?.color === 'inactive' && t.children?.[0] === '/watch on liga')).toBe(true)
+  for (const k of ['cmd:configuration', 'cmd:list', 'cmd:help']) expect(textColor(tree, k)).toBe('suggestion')
+  await ui.press({ key: 'eye:plain-view' })
+  tree = await ui.drawn()
+  expect(textColor(tree, 'eye:plain-view')).toBe('warning')
+  expect(nodes(tree, 'Text').some(t => t.props?.color === 'warning' && t.children?.[0] === '/plain-view show mostra')).toBe(true)
+  await ui.press({ key: 'toggle:quiet' }) // runs /pad quiet; the toggle itself reads the option on the next load
+  await ui.unmount()
+})
+
+test('desktop toggle: a green block with a knob, drawn from the children only (a label beside them would win)', async ($, on) => {
+  sbWorld(on)
+  await start($)
+  const ui = await panel($, 'desktop')
+  const tree = await ui.drawn()
+  const on1 = button(tree, 'toggle:limits-meter')
+  const off1 = button(tree, 'toggle:agent-watch')
+  expect(nodes(on1, 'Text')[0]?.props).toEqual({ backgroundColor: 'success', color: 'inverseText' })
+  expect(nodes(off1, 'Text')[0]?.props).toEqual({ backgroundColor: 'inactive', color: 'inverseText' })
+  // the engine names the control by its children's text: the knob, not `● on`, so no explicit label was passed
+  expect(on1?.props?.label).toBe('   ● ')
+  expect(off1?.props?.label).toBe(' ●   ')
+  await ui.unmount()
+})
+
+// Coverage of the rest of what the prototype launchpad-0.9.0 approved.
+test('discreto on: the quiet toggle reads green and one press turns it off', { options: { quiet: true } }, async ($, on) => {
+  sbWorld(on)
+  const sets = recordSets(on)
+  await start($)
+  const ui = await panel($)
+  const tree = await ui.drawn()
+  expect(textColor(tree, 'toggle:quiet')).toBe('success')
+  expect(nodes(button(tree, 'toggle:quiet'), 'Text')[0]?.children?.[0]).toBe('● on')
+  await ui.press({ key: 'toggle:quiet' })
+  expect(sets.at(-1)).toEqual({ key: 'launchpad.quiet', value: false })
+  await ui.unmount()
+})
+
+test('a toggle press redraws the panel from the mod\'s new option', async ($, on) => {
+  const rows = [...ENABLED.map(r => ({ ...r })), ...QUIET_ROWS]
+  const w = world(on, files, undefined, SB_COMMANDS, undefined, { rows })
+  await start($)
+  const ui = await panel($)
+  expect(button(await ui.drawn(), 'mod:limits-meter')).toBeDefined()
+  rows.find(r => r.key === 'limits-meter.enabled')!.value = false // what `/limits off` writes
+  await ui.press({ key: 'toggle:limits-meter' })
+  expect(w.commands).toEqual(['limits off'])
+  const tree = await ui.drawn()
+  expect(textColor(tree, 'toggle:limits-meter')).toBe('inactive') // now off
+  expect(button(tree, 'mod:limits-meter')).toBeUndefined() // off: its name is text
+  expect(button(tree, 'eye:limits-meter')).toBeUndefined() // and it has no eye
+  await ui.unmount()
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`in Portuguese the panel's footer verbs and tabs are links in the action color, on ${surface}`, async ($, on) => {
+    sbWorld(on)
+    await start($)
+    const ui = await panel($, surface)
+    const tree = await ui.drawn()
+    for (const [key, label] of [['cmd:configuration', 'configurar'], ['cmd:list', 'listar'], ['cmd:add', 'adicionar'], ['cmd:remove', 'remover'], ['cmd:reset', 'restaurar'], ['cmd:place', 'posição'], ['cmd:hide', 'ocultar'], ['cmd:help', 'ajuda']] as const) {
+      expect(button(tree, key)?.props?.label).toBe(label)
+      expect(textColor(tree, key)).toBe('suggestion')
+    }
+    expect(button(tree, 'tab:shortcuts')?.props?.label).toBe('Atalhos')
+    await ui.unmount()
+  })
+}
+
+test('hidden: the panel\'s footer offers `mostrar` (/pad show) in place of `ocultar`, still a link', async ($, on) => {
+  const w = sbWorld(on)
+  await start($)
+  await pad($, 'hide')
+  const ui = await panel($)
+  const tree = await ui.drawn()
+  expect(button(tree, 'cmd:hide')).toBeUndefined()
+  expect(button(tree, 'cmd:show')?.props?.label).toBe('mostrar')
+  expect(button(tree, 'cmd:show')?.hover).toEqual({ scope: 'hover:cmd:show', underline: true, inverse: false })
+  await ui.press({ key: 'cmd:show' })
+  expect(w.logs).toContain('Menu de atalhos do launchpad.') // /pad show ran: the menu is back
+  await ui.unmount()
+})
+
+test('desktop: the controls are native secondary buttons, the warned one keeps its fill hover and a warning label', async ($, on) => {
+  world(on, files, undefined, SB_COMMANDS, undefined, { model: 'claude-sonnet-5-5', fiveHour: 74, rows: [...ENABLED, ...QUIET_ROWS] })
+  await start($)
+  await step($, 'claude-sonnet-5-5', 'high')
+  const ui = await panel($, 'desktop')
+  const tree = await ui.drawn()
+  expect(button(tree, 'model:haiku')?.props?.variant).toBe('secondary')
+  expect(button(tree, 'effort:low')?.props?.variant).toBe('secondary')
+  expect(textColor(tree, 'model:opus')).toBe('warning')
+  expect(button(tree, 'model:opus')?.hover).toEqual({ scope: 'hover:model:opus', backgroundColor: 'claude', color: 'inverseText' })
+  await ui.unmount()
+})
+
+test('terminal: a warned control is a warning-colored link, with the underline hover', async ($, on) => {
+  world(on, files, undefined, SB_COMMANDS, undefined, { model: 'claude-sonnet-5-5', fiveHour: 74, rows: [...ENABLED, ...QUIET_ROWS] })
+  await start($)
+  await step($, 'claude-sonnet-5-5', 'high')
+  const ui = await panel($)
+  const tree = await ui.drawn()
+  expect(button(tree, 'model:opus')?.props?.plain).toBe(true)
+  expect(textColor(tree, 'model:opus')).toBe('warning')
+  expect(button(tree, 'model:opus')?.hover).toEqual({ scope: 'hover:model:opus', underline: true, inverse: false })
+  await ui.unmount()
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the verbs under the menu card underline under the pointer and are not boxes, on ${surface}`, async ($, on) => {
+    world(on)
+    await start($)
+    const ui = await row($, surface)
+    const tree = await ui.drawn()
+    for (const k of ['cmd:configuration', 'cmd:list', 'cmd:help']) {
+      expect(button(tree, k)?.hover).toEqual({ scope: `hover:${k}`, underline: true, inverse: false })
+      expect(button(tree, k)?.props?.plain).toBe(true)
+    }
+    await ui.unmount()
+  })
+}
+
+test('the hint line is not touched: the quiet chip has no hover of the panel\'s', async ($, on) => {
+  sbWorld(on)
+  await start($)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await hint($, surface)
+    const tree = await ui.drawn()
+    expect(hasHover(tree, 'quiet:on')).toBe(false)
+    expect(button(tree, 'pad:panel')).toBeDefined() // ◆ pad keeps the tile hover it had before 0.9: not touched
+    await ui.unmount()
+  }
+})
+
+test('the Shortcuts tab says so when no shortcut is installed', async ($, on) => {
+  world(on, {}, undefined, [{ name: 'pad', description: 'Shortcuts', source: 'plugin' }, ...MOD_COMMANDS])
+  await start($)
+  for (let i = 0; i < 12; i++) await pad($, 'remove 1') // the person drops every button
+  const ui = await panel($)
+  await ui.press({ key: 'tab:shortcuts' })
+  const drawn = JSON.stringify(await ui.drawn())
+  expect(drawn).toContain('Nenhum atalho disponível.')
+  expect(drawn).not.toContain('"key":"pad:')
+  await ui.unmount()
+})
